@@ -1,0 +1,349 @@
+module logreader;
+
+import std.c.time;
+import std.string;
+import std.stream;
+
+enum : uint
+{
+	PACKET_MALLOC,
+	PACKET_CALLOC,
+	PACKET_REALLOC,
+	PACKET_EXTEND,
+	PACKET_FREE,
+	PACKET_MEMORY_DUMP,
+	PACKET_MEMORY_MAP,
+	PACKET_TEXT,
+	PACKET_MAX
+}
+
+enum 
+{
+	PAGESIZE = 4096
+}
+
+enum
+{
+    B_16,
+    B_32,
+    B_64,
+    B_128,
+    B_256,
+    B_512,
+    B_1024,
+    B_2048,
+    B_PAGE,             // start of large alloc
+    B_PAGEPLUS,         // continuation of large alloc
+    B_FREE,             // free page
+    B_UNCOMMITTED,      // memory not committed for this page
+    B_MAX
+}
+
+uint  [B_PAGEPLUS] pageSizes = [ 16,32,64,128,256,512,1024,2048,4096 ];
+string[B_MAX] pageNames = ["B_16", "B_32", "B_64", "B_128", "B_256", "B_512", "B_1024", "B_2048", "B_PAGE", "B_PAGEPLUS", "B_FREE", "B_UNCOMMITTED"];
+
+alias void delegate(ulong pos, ulong max) LogProgressDelegate;
+
+final class LogReader
+{
+	BufferedFile f;
+	string fileName;
+
+	this(string fileName)
+	{
+		this.fileName = fileName;
+	}
+	
+	void load(LogProgressDelegate progressDelegate = null)
+	{
+		f = new BufferedFile(fileName);
+		if(f is null)
+			throw new Exception("Can't open file " ~ fileName);
+		long fileSize = f.size;
+		
+		uint n; events.length = 256;
+		while(!f.eof)
+			{
+				if((n&0xFFF)==0 && progressDelegate)
+					progressDelegate(f.position, fileSize);
+				uint type = readDword;
+				MemoryEvent event;
+				switch(type)
+				{
+					case PACKET_MALLOC:
+						event = new MallocEvent; break;
+					case PACKET_CALLOC:
+						event = new CallocEvent; break;
+					case PACKET_REALLOC:
+						event = new ReallocEvent; break;
+					case PACKET_EXTEND:
+						event = new ExtendEvent; break;
+					case PACKET_FREE:
+						event = new FreeEvent; break;
+					case PACKET_MEMORY_DUMP:
+						event = new MemoryDumpEvent; break;
+					case PACKET_MEMORY_MAP:
+						event = new MemoryMapEvent; break;
+					case PACKET_TEXT:
+						event = new TextEvent; break;
+					default:
+						throw new Exception("Unknown packet type");
+				}
+				if(n>=events.length)
+					events.length = events.length*2;
+				events[n] = event;
+				n++;
+			}
+		events.length = n;
+	}
+
+	final uint readDword()
+	{
+		uint result;
+		f.read(result);
+		return result;
+	}
+
+	final ubyte[] readData(uint count)
+	{
+		ubyte[] result = new ubyte[count];
+		f.readExact(result.ptr, result.length);
+		return result;
+	}
+
+	final uint[] readDwords(uint count)
+	{
+		uint[] result = new uint[count];
+		f.readExact(result.ptr, result.length*4);
+		return result;
+	}
+
+	class MemoryEvent
+	{
+		uint type;
+		time_t time;
+		uint[] stackTrace;
+
+		this()
+		{
+			time = readDword();
+			while(true)
+			{
+				uint p = readDword();
+				if(!p) break;
+				stackTrace ~= p;
+			}
+		}
+	}
+
+	class MemoryAllocationEvent : MemoryEvent
+	{
+		uint p, size;
+		this()
+		{
+			super();
+			p = readDword(), size = readDword();
+		}
+	}
+
+	class MallocEvent : MemoryAllocationEvent
+	{
+		this()
+		{
+			type = PACKET_MALLOC;
+			super();
+		}
+	}
+
+	class CallocEvent : MemoryAllocationEvent
+	{
+		this()
+		{
+			type = PACKET_CALLOC;
+			super();
+		}
+	}
+
+	class ReallocEvent : MemoryEvent  // TODO : reorganize
+	{
+		uint p1, p2, size;
+
+		this()
+		{
+			type = PACKET_REALLOC;
+			super();
+			p1 = readDword(), p2 = readDword(), size = readDword();
+		}
+	}
+
+	class ExtendEvent : MemoryAllocationEvent
+	{
+		this()
+		{
+			type = PACKET_EXTEND;
+			super();
+		}
+	}
+
+	class FreeEvent : MemoryEvent
+	{
+		uint p;
+
+		this()
+		{
+			type = PACKET_FREE;
+			super();
+			p = readDword();
+		}
+	}
+
+	struct Pool
+	{
+		uint addr, npages, ncommitted;
+		ubyte[] pagetable;
+		uint[] freebits, finals, noscan;
+		uint dataOffset;
+
+		uint topAddr() { return addr + npages*PAGESIZE; }
+		uint topCommittedAddr() { return addr + ncommitted*PAGESIZE; }
+
+		uint nfree()
+		{
+			uint result;
+			foreach(p;pagetable)
+				if(p==B_FREE || p==B_UNCOMMITTED)
+					result++;
+			return result;
+		}
+
+		static bool readBit(uint[] data, uint i)
+		{
+			return (data[i >> 5] & (1 << (i & 0x1F))) != 0;
+		}
+	}
+
+	class MemoryStateEvent : MemoryEvent
+	{
+		Pool[] pools;
+		
+		this(bool data)
+		{
+			super();
+			pools.length = readDword();
+			foreach(ref pool;pools)
+				with(pool)
+				{
+					addr = readDword;
+					npages = readDword;
+					ncommitted = readDword;
+					if(npages >= 0x100000 || ncommitted >= 0x100000)   // address space / PAGESIZE
+						throw new Exception("Too many pages");   // may happen if the memory log is corrupted
+					pagetable = readData(npages);
+					freebits = readDwords(readDword);
+					finals = readDwords(readDword);
+					noscan = readDwords(readDword);
+					if(data)
+					{
+						dataOffset = f.position;
+						f.seekCur(ncommitted*PAGESIZE);
+					}
+				}
+		}
+
+		final uint allocated()
+		{
+			uint result;
+			foreach(pool;pools)
+				result += pool.npages - pool.nfree;
+			return result;
+		}
+
+		final uint committed()
+		{
+			uint result;
+			foreach(pool;pools)
+				result += pool.ncommitted;
+			return result;
+		}
+
+		final uint total()
+		{
+			uint result;
+			foreach(pool;pools)
+				result += pool.npages;
+			return result;
+		}
+
+		final Pool* findPool(uint addr)
+		{
+			foreach(int poolNr, ref pool;pools)
+				if(pool.addr<=addr && pool.topAddr>addr)
+					return &pool;
+			return null;
+		}
+	}
+	
+	class MemoryDumpEvent : MemoryStateEvent
+	{
+		uint[B_MAX] buckets;
+		
+		this()
+		{
+			type = PACKET_MEMORY_DUMP;
+			super(true);
+			buckets[] = readDwords(B_MAX);
+		}
+
+		final ubyte[] loadPoolData(int poolNr)
+		{
+			Pool* p = &pools[poolNr];
+			f.seekSet(p.dataOffset);
+			return readData(p.ncommitted * PAGESIZE);
+		}
+
+		final uint readDword(uint addr)
+		{
+			auto pool = findPool(addr);
+			if(pool is null) throw new Exception(format("Specified memory address %08X does not belong in any memory pool", addr));
+			if(addr>=pool.topCommittedAddr) throw new Exception(format("Specified memory address %08X is in a reserved memory region", addr));
+			f.seekSet(pool.dataOffset + (addr-pool.addr));
+			return this.outer.readDword();
+		}
+	}
+
+	class MemoryMapEvent : MemoryStateEvent
+	{
+		this()
+		{
+			type = PACKET_MEMORY_MAP;
+			super(false);
+		}
+	}
+
+	class TextEvent : MemoryEvent
+	{
+		string text;
+
+		this()
+		{
+			type = PACKET_TEXT;
+			super();
+			text = cast(string)readData(readDword());
+		}
+	}
+
+	MemoryEvent[] events;
+}
+
+alias LogReader.MemoryEvent MemoryEvent;
+alias LogReader.MemoryAllocationEvent MemoryAllocationEvent;
+alias LogReader.MallocEvent MallocEvent;
+alias LogReader.CallocEvent CallocEvent;
+alias LogReader.ReallocEvent ReallocEvent;
+alias LogReader.ExtendEvent ExtendEvent;
+alias LogReader.FreeEvent FreeEvent;
+alias LogReader.MemoryStateEvent MemoryStateEvent;
+alias LogReader.MemoryDumpEvent MemoryDumpEvent;
+alias LogReader.MemoryMapEvent MemoryMapEvent;
+alias LogReader.TextEvent TextEvent;
+alias LogReader.Pool Pool;
