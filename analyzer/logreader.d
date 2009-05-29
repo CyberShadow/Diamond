@@ -44,6 +44,8 @@ string[B_MAX] pageNames = ["B_16", "B_32", "B_64", "B_128", "B_256", "B_512", "B
 
 alias void delegate(ulong pos, ulong max) LogProgressDelegate;
 
+const uint FORMAT_VERSION = 1; // format of the log file
+
 final class LogReader
 {
 	BufferedFile f;
@@ -60,11 +62,15 @@ final class LogReader
 		if(f is null)
 			throw new Exception("Can't open file " ~ fileName);
 		long fileSize = f.size;
+
+		auto fileVersion = readDword;
+		if (fileVersion != FORMAT_VERSION)
+			throw new Exception(format("File version mismatch - file is in version %d, while I only understand version %d logs. Please use the same analyzer version as the Diamond version used to record this memory log.", fileVersion, FORMAT_VERSION));
 		
 		uint n; events.length = 256;
 		while(!f.eof)
 			{
-				if((n&0xFFF)==0 && progressDelegate)
+				if((n&0xFF)==0 && progressDelegate)
 					progressDelegate(f.position, fileSize);
 				uint type = readDword;
 				MemoryEvent event;
@@ -202,7 +208,7 @@ final class LogReader
 		uint addr, npages, ncommitted;
 		ubyte[] pagetable;
 		uint[] freebits, finals, noscan;
-		uint dataOffset;
+		ulong[] dataOffsets;
 
 		uint topAddr() { return addr + npages*PAGESIZE; }
 		uint topCommittedAddr() { return addr + ncommitted*PAGESIZE; }
@@ -222,6 +228,8 @@ final class LogReader
 		}
 	}
 
+	private ulong[][] pageOffsetHistory;
+
 	class MemoryStateEvent : MemoryEvent
 	{
 		Pool[] pools;
@@ -230,22 +238,42 @@ final class LogReader
 		{
 			super();
 			pools.length = readDword();
-			foreach(ref pool;pools)
+			if (pageOffsetHistory.length < pools.length)
+				pageOffsetHistory.length = pools.length;
+			foreach(poolNr, ref pool;pools)
 				with(pool)
 				{
 					addr = readDword;
 					npages = readDword;
 					ncommitted = readDword;
-					if(npages >= 0x100000 || ncommitted >= 0x100000)   // address space / PAGESIZE
+					if (npages >= 0x100000 || ncommitted >= 0x100000)   // address space / PAGESIZE
 						throw new Exception("Too many pages");   // may happen if the memory log is corrupted
 					pagetable = readData(npages);
 					freebits = readDwords(readDword);
 					finals = readDwords(readDword);
 					noscan = readDwords(readDword);
-					if(data)
+					if (data)
 					{
-						dataOffset = f.position;
-						f.seekCur(ncommitted*PAGESIZE);
+						dataOffsets.length = ncommitted;
+						if (pageOffsetHistory[poolNr].length < ncommitted)
+							pageOffsetHistory[poolNr].length = ncommitted;
+						for (int page=0;page<ncommitted;page++)
+						{
+							auto dataPresent = readDword;
+							if (dataPresent)
+							{
+								dataOffsets[page] = f.position;
+								pageOffsetHistory[poolNr][page] = f.position;
+								f.seekCur(PAGESIZE);
+							}
+							else
+							{
+								ulong offset = pageOffsetHistory[poolNr][page];
+								if (offset==0 || offset>f.position)
+									throw new Exception("Invalid page data backreference");
+								dataOffsets[page] = pageOffsetHistory[poolNr][page];
+							}
+						}
 					}
 				}
 		}
@@ -294,11 +322,24 @@ final class LogReader
 			buckets[] = readDwords(B_MAX);
 		}
 
+		final ubyte[] loadPageData(int poolNr, int pageNr)
+		{
+			Pool* p = &pools[poolNr];
+			f.seekSet(p.dataOffsets[pageNr]);
+			return readData(PAGESIZE);
+		}
+		
 		final ubyte[] loadPoolData(int poolNr)
 		{
 			Pool* p = &pools[poolNr];
-			f.seekSet(p.dataOffset);
-			return readData(p.ncommitted * PAGESIZE);
+			ubyte[] result;
+			result.length = p.ncommitted * PAGESIZE;
+			for (int pageNr=0;pageNr<p.ncommitted;pageNr++)
+			{
+				f.seekSet(p.dataOffsets[pageNr]);
+				f.readExact(result.ptr+pageNr*PAGESIZE, PAGESIZE);
+			}
+			return result;
 		}
 
 		final uint readDword(uint addr)
@@ -306,7 +347,7 @@ final class LogReader
 			auto pool = findPool(addr);
 			if(pool is null) throw new Exception(format("Specified memory address %08X does not belong in any memory pool", addr));
 			if(addr>=pool.topCommittedAddr) throw new Exception(format("Specified memory address %08X is in a reserved memory region", addr));
-			f.seekSet(pool.dataOffset + (addr-pool.addr));
+			f.seekSet(pool.dataOffsets[(addr-pool.addr)/PAGESIZE] + (addr-pool.addr)%PAGESIZE);
 			return this.outer.readDword();
 		}
 	}

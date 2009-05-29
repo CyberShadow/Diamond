@@ -53,7 +53,9 @@ final:
 								if((event.p+event.size >= n.p) && (event.p < n.p+getNodeSize(n)))
 									throw new Exception(format("Allocated range %08X - %08X is intersecting with node %08X - %08X allocated by %d", event.p, event.p+event.size, n.p, n.p+getNodeSize(n), n.eventID));
 						}
-						auto n = Node(cursor, event.p);
+						auto n = new Node;
+						n.eventID = cursor;
+						n.p = event.p;
 						addNode(n);
 						mapNode(n, event.size);
 						break;
@@ -284,12 +286,4 @@ struct Node
 	Node* next, prev;
 	uint eventID;
 	uint p;
-
-	static Node* opCall(uint eventID, uint p)
-	{
-		Node* result = new Node;
-		result.eventID = eventID;
-		result.p = p;
-		return result;
-	}
 }
