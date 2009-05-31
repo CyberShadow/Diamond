@@ -14,6 +14,7 @@ enum : uint
 	PACKET_MEMORY_DUMP,
 	PACKET_MEMORY_MAP,
 	PACKET_TEXT,
+	PACKET_NEWCLASS,
 	PACKET_MAX
 }
 
@@ -44,7 +45,7 @@ string[B_MAX] pageNames = ["B_16", "B_32", "B_64", "B_128", "B_256", "B_512", "B
 
 alias void delegate(ulong pos, ulong max) LogProgressDelegate;
 
-const uint FORMAT_VERSION = 1; // format of the log file
+const uint FORMAT_VERSION = 2; // format of the log file
 
 final class LogReader
 {
@@ -59,7 +60,7 @@ final class LogReader
 	void load(LogProgressDelegate progressDelegate = null)
 	{
 		f = new BufferedFile(fileName);
-		if(f is null)
+		if (f is null)
 			throw new Exception("Can't open file " ~ fileName);
 		long fileSize = f.size;
 
@@ -68,13 +69,14 @@ final class LogReader
 			throw new Exception(format("File version mismatch - file is in version %d, while I only understand version %d logs. Please use the same analyzer version as the Diamond version used to record this memory log.", fileVersion, FORMAT_VERSION));
 		
 		uint n; events.length = 256;
-		while(!f.eof)
+		scope(exit) events.length = n;
+		while (!f.eof)
 			{
-				if((n&0xFF)==0 && progressDelegate)
+				if ((n&0xFF)==0 && progressDelegate)
 					progressDelegate(f.position, fileSize);
 				uint type = readDword;
-				MemoryEvent event;
-				switch(type)
+				Event event;
+				switch (type)
 				{
 					case PACKET_MALLOC:
 						event = new MallocEvent; break;
@@ -92,15 +94,21 @@ final class LogReader
 						event = new MemoryMapEvent; break;
 					case PACKET_TEXT:
 						event = new TextEvent; break;
+					case PACKET_NEWCLASS:
+						event = new NewClassEvent; break;
 					default:
 						throw new Exception("Unknown packet type");
 				}
-				if(n>=events.length)
-					events.length = events.length*2;
-				events[n] = event;
-				n++;
+				MemoryEvent memoryEvent = cast(MemoryEvent)event;
+				if (memoryEvent) // store non-metadata events only
+				{
+					memoryEvent.type = type;
+					if (n>=events.length)
+						events.length = events.length*2;
+					events[n] = memoryEvent;
+					n++;
+				}
 			}
-		events.length = n;
 	}
 
 	final uint readDword()
@@ -124,50 +132,52 @@ final class LogReader
 		return result;
 	}
 
-	class MemoryEvent
+	class Event
 	{
 		uint type;
+	}
+
+	class MemoryEvent : Event
+	{
 		time_t time;
 		uint[] stackTrace;
 
 		this()
 		{
 			time = readDword();
-			while(true)
+			while (true)
 			{
 				uint p = readDword();
-				if(!p) break;
+				if (!p) break;
 				stackTrace ~= p;
 			}
 		}
 	}
 
+	private string newClassName;
+
 	class MemoryAllocationEvent : MemoryEvent
 	{
 		uint p, size;
+		string className;
 		this()
 		{
 			super();
 			p = readDword(), size = readDword();
+			if (newClassName)
+			{
+				className = newClassName;
+				newClassName = null;
+			}
 		}
 	}
 
 	class MallocEvent : MemoryAllocationEvent
 	{
-		this()
-		{
-			type = PACKET_MALLOC;
-			super();
-		}
 	}
 
 	class CallocEvent : MemoryAllocationEvent
 	{
-		this()
-		{
-			type = PACKET_CALLOC;
-			super();
-		}
 	}
 
 	class ReallocEvent : MemoryEvent  // TODO : reorganize
@@ -176,7 +186,6 @@ final class LogReader
 
 		this()
 		{
-			type = PACKET_REALLOC;
 			super();
 			p1 = readDword(), p2 = readDword(), size = readDword();
 		}
@@ -186,7 +195,6 @@ final class LogReader
 	{
 		this()
 		{
-			type = PACKET_EXTEND;
 			super();
 		}
 	}
@@ -197,7 +205,6 @@ final class LogReader
 
 		this()
 		{
-			type = PACKET_FREE;
 			super();
 			p = readDword();
 		}
@@ -216,8 +223,8 @@ final class LogReader
 		uint nfree()
 		{
 			uint result;
-			foreach(p;pagetable)
-				if(p==B_FREE || p==B_UNCOMMITTED)
+			foreach (p;pagetable)
+				if (p==B_FREE || p==B_UNCOMMITTED)
 					result++;
 			return result;
 		}
@@ -240,8 +247,8 @@ final class LogReader
 			pools.length = readDword();
 			if (pageOffsetHistory.length < pools.length)
 				pageOffsetHistory.length = pools.length;
-			foreach(poolNr, ref pool;pools)
-				with(pool)
+			foreach (poolNr, ref pool;pools)
+				with (pool)
 				{
 					addr = readDword;
 					npages = readDword;
@@ -281,7 +288,7 @@ final class LogReader
 		final uint allocated()
 		{
 			uint result;
-			foreach(pool;pools)
+			foreach (pool;pools)
 				result += pool.npages - pool.nfree;
 			return result;
 		}
@@ -289,7 +296,7 @@ final class LogReader
 		final uint committed()
 		{
 			uint result;
-			foreach(pool;pools)
+			foreach (pool;pools)
 				result += pool.ncommitted;
 			return result;
 		}
@@ -297,15 +304,15 @@ final class LogReader
 		final uint total()
 		{
 			uint result;
-			foreach(pool;pools)
+			foreach (pool;pools)
 				result += pool.npages;
 			return result;
 		}
 
 		final Pool* findPool(uint addr)
 		{
-			foreach(int poolNr, ref pool;pools)
-				if(pool.addr<=addr && pool.topAddr>addr)
+			foreach (int poolNr, ref pool;pools)
+				if (pool.addr<=addr && pool.topAddr>addr)
 					return &pool;
 			return null;
 		}
@@ -317,7 +324,6 @@ final class LogReader
 		
 		this()
 		{
-			type = PACKET_MEMORY_DUMP;
 			super(true);
 			buckets[] = readDwords(B_MAX);
 		}
@@ -345,8 +351,8 @@ final class LogReader
 		final uint readDword(uint addr)
 		{
 			auto pool = findPool(addr);
-			if(pool is null) throw new Exception(format("Specified memory address %08X does not belong in any memory pool", addr));
-			if(addr>=pool.topCommittedAddr) throw new Exception(format("Specified memory address %08X is in a reserved memory region", addr));
+			if (pool is null) throw new Exception(format("Specified memory address %08X does not belong in any memory pool", addr));
+			if (addr>=pool.topCommittedAddr) throw new Exception(format("Specified memory address %08X is in a reserved memory region", addr));
 			f.seekSet(pool.dataOffsets[(addr-pool.addr)/PAGESIZE] + (addr-pool.addr)%PAGESIZE);
 			return this.outer.readDword();
 		}
@@ -356,7 +362,6 @@ final class LogReader
 	{
 		this()
 		{
-			type = PACKET_MEMORY_MAP;
 			super(false);
 		}
 	}
@@ -367,16 +372,25 @@ final class LogReader
 
 		this()
 		{
-			type = PACKET_TEXT;
 			super();
 			text = cast(string)readData(readDword());
+		}
+	}
+
+	class NewClassEvent : Event
+	{
+		string className;
+		
+		this()
+		{
+			className = cast(string)readData(readDword());
+			newClassName = className;
 		}
 	}
 
 	MemoryEvent[] events;
 }
 
-alias LogReader.MemoryEvent MemoryEvent;
 alias LogReader.MemoryAllocationEvent MemoryAllocationEvent;
 alias LogReader.MallocEvent MallocEvent;
 alias LogReader.CallocEvent CallocEvent;

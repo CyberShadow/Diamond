@@ -11,8 +11,9 @@ import logreader;
 import mapfile;
 import analysis;
 
-string[PACKET_MAX] eventNames = ["PACKET_MALLOC", "PACKET_CALLOC", "PACKET_REALLOC", "PACKET_EXTEND", "PACKET_FREE", "PACKET_MEMORY_DUMP", "PACKET_MEMORY_MAP", "PACKET_TEXT"];
-char  [PACKET_MAX] eventChars = "mcrxfDMt";
+string[PACKET_MAX] eventNames = ["PACKET_MALLOC", "PACKET_CALLOC", "PACKET_REALLOC", "PACKET_EXTEND", "PACKET_FREE", "PACKET_MEMORY_DUMP", "PACKET_MEMORY_MAP", "PACKET_TEXT", "PACKET_NEWCLASS"];
+string[PACKET_MAX] shortEventNames = ["MALLOC", "CALLOC", "REALLOC", "EXTEND", "FREE", "MEMDUMP", "MEMMAP", "TEXT", "NCLASS"];
+char  [PACKET_MAX] eventChars = "mcrxfDMtC";
 
 char  [B_MAX] pageChars = "45678901P+.x";
 
@@ -30,7 +31,7 @@ int main(string[] argv)
 	
 	string fileName;
 	string mapFileName;
-	foreach(arg;argv[1..$])
+	foreach (arg;argv[1..$])
 		if (getExt(arg)=="mem")
 			fileName = arg;
 		else	
@@ -76,6 +77,80 @@ int main(string[] argv)
 
 	auto analysis = new Analysis(log);
 
+	// a few utility functions...
+	
+	int parsePositionSubexpression(string s)
+	{
+		if (s.length==0)
+			throw new Exception("Conversion: empty string");
+		if (s[0]=='-' || s[0]=='+') // relative to current event
+			s = '@' ~ s;
+
+		int padd = find(s, '-');
+		int psub = find(s, '+');
+		if (psub>0 || padd>0) // support simple arithmetics
+			if (psub<=0 || padd>psub)
+				return parsePositionSubexpression(s[0..padd-1]) + parsePositionSubexpression(s[padd+1..$]);
+			else
+				return parsePositionSubexpression(s[0..psub-1]) - parsePositionSubexpression(s[psub+1..$]);
+		if (s=="@" || s=="cursor")
+			return analysis.cursor;
+		else
+		if (s=="$" || s=="end")
+			return log.events.length-1;
+		else
+		if (s=="^" || s=="start")
+			return -1;
+		else
+			return toInt(s);
+	}
+
+	int parsePosition(string s)
+	{
+		int position = parsePositionSubexpression(s);
+		if (position >= log.events.length || position<-1)
+			throw new Exception("Position is out of range");
+		return position;
+	}
+
+	void parsePositionRange(string[] args, ref int min, ref int max)
+	{
+		if (args.length==0)
+			min = max = analysis.cursor;
+		else
+		if (args.length==1)
+			min = max = parsePosition(args[0]);
+		else
+		if (args.length==2)
+		{
+			min = parsePosition(args[0]);
+			max = parsePosition(args[1]);
+			if (min<0 || min>max)
+				throw new Exception("Invalid range");
+		}
+		else
+			throw new Exception("Too many arguments");
+	}
+
+	void parseMemoryRange(string[] args, ref uint min, ref uint max)
+	{
+		if (args.length==0)
+			throw new Exception("Specify a memory address or range");
+		else
+		if (args.length==1)
+			min = max = fromHex(args[0]);
+		else
+		if (args.length==2)
+		{
+			min = fromHex(args[0]);
+			max = fromHex(args[1]);
+			if (min>max)
+				throw new Exception("Invalid range");
+		}
+		else
+			throw new Exception("Too many arguments");
+	}
+
 	string mapLookUp(uint addr)
 	{
 		if (map is null)
@@ -87,17 +162,22 @@ int main(string[] argv)
 	void showEvent(int i)
 	{
 		auto event = log.events[i];
-		writef("%7d @ %s: %-11s", i, timeStr(event.time), eventNames[event.type][7..$]);
-		if (cast(MemoryAllocationEvent)event) with(cast(MemoryAllocationEvent)event)
-			writefln(" %08X - %08X (%d bytes)", p, p+size, size);
+		writef("%7d @ %s: %-7s", i, timeStr(event.time), shortEventNames[event.type]);
+		if (cast(MemoryAllocationEvent)event) with (cast(MemoryAllocationEvent)event)
+		{
+			writef(" %08X - %08X (%d bytes)", p, p+size, size);
+			if (className)
+				writefln(" %s", className);
+			writefln;
+		}
 		else
-		if (cast(FreeEvent)event) with(cast(FreeEvent)event)
+		if (cast(FreeEvent)event) with (cast(FreeEvent)event)
 			writefln(" %08X", p);
 		else
-		if (cast(MemoryStateEvent)event) with(cast(MemoryStateEvent)event)
+		if (cast(MemoryStateEvent)event) with (cast(MemoryStateEvent)event)
 			writefln(" (%6d/%6d/%6d)", allocated, committed, total);
 		else
-		if (cast(TextEvent)event) with(cast(TextEvent)event)
+		if (cast(TextEvent)event) with (cast(TextEvent)event)
 			writefln(" - \"%s\"", text);
 		else
 			writefln();
@@ -106,7 +186,7 @@ int main(string[] argv)
 	void showInfo(MemoryStateEvent event, uint p, Pool* pool=null, uint value=0)
 	{
 		if (pool is null)
-			foreach(ref epool;event.pools)
+			foreach (ref epool;event.pools)
 				if (p >= epool.addr && p < epool.topAddr)
 					{ pool = &epool; break; }
 		if (pool is null)
@@ -155,25 +235,25 @@ int main(string[] argv)
 
 	while (true)
 	{
+		highVideo();
 		if (analysis.cursor<0)
 			writef("    \r> ");
 		else
 			writef("    \r%s%d> ", eventChars[log.events[analysis.cursor].type], analysis.cursor);
-		highVideo();
-		auto args = split(strip(readln()), " ");
 		normVideo();
+		auto args = split(strip(readln()), " ");
 		if (args.length==0) continue;
 
 		bool allRefs;
 		
 		try
-			switch(tolower(args[0]))
+			switch (tolower(args[0]))
 			{
 				// === General statistics ===
 				case "stats": // display event counts
 				{
 					int[PACKET_MAX] counts;
-					foreach(event;log.events)
+					foreach (event;log.events)
 						counts[event.type]++;
 					for (int i=0;i<PACKET_MAX;i++)
 						writefln("%-20s: %8d", eventNames[i], counts[i]);
@@ -183,7 +263,7 @@ int main(string[] argv)
 				case "allocstats": // display top allocator call stacks
 				{
 					static ulong[uint[]] stacks;
-					foreach(event;log.events)
+					foreach (event;log.events)
 					{
 						auto allocEvent = cast(LogReader.MemoryAllocationEvent)event;
 						if (allocEvent is null) 
@@ -212,37 +292,30 @@ int main(string[] argv)
 					if (n>sortedStacks.length) 
 						n = sortedStacks.length;
 					writefln("Top %d allocators by total allocated data:", n);
-					foreach(sorter;sortedStacks[0..n])
+					foreach (sorter;sortedStacks[0..n])
 					{
 						writefln("=== %d ===", stacks[sorter.stack]);
-						foreach(func;sorter.stack)
+						foreach (func;sorter.stack)
 							writefln(" %08X  %s", func, mapLookUp(func));
 					}
 					break;
 				}
 				// === timeline information ===
 				case "dumps": // list memory dump events
-					foreach(i,event;log.events)
+					foreach (i,event;log.events)
 						if (event.type == PACKET_MEMORY_DUMP)
 							showEvent(i);
 					break;
 				case "maps": // list memory map events
-					foreach(i,event;log.events)
+					foreach (i,event;log.events)
 						if (event.type == PACKET_MEMORY_MAP)
 							showEvent(i);
 					break;
 				case "events": // display events in event range
+				case "event":
 				{
 					int min, max;
-					if (args.length==1)
-						min = max = analysis.cursor;
-					else
-					if (args.length==2)
-						min = max = toInt(args[1]);
-					else
-						min = toInt(args[1]), max = toInt(args[2]);
-					if (min<0 || max>log.events.length-1 || min>max)
-						throw new Exception("Invalid range");
+					parsePositionRange(args[1..$], min, max);
 					for (int i=min;i<=max;i++)
 						showEvent(i);
 					break;
@@ -250,20 +323,9 @@ int main(string[] argv)
 				// === navigation ===
 				case "goto": // set cursor at a certain event number
 				{
-					if (args.length!=2 || args[1].length==0)
-						throw new Exception("Specify an event number or $ for the end of file.");
-					int position;
-					if (args[1]=="$" || args[1]=="end")
-						position = log.events.length-1;
-					else
-					if (args[1][0]=='+')
-						position = analysis.cursor+toInt(args[1][1..$]);
-					else
-					if (args[1][0]=='-')
-						position = analysis.cursor-toInt(args[1][1..$]);
-					else
-						position = toInt(args[1]);
-					analysis.goTo(position, &progressCallback);
+					if (args.length!=2)
+						throw new Exception("Specify an event number or expression.");
+					analysis.goTo(parsePosition(args[1]), &progressCallback);
 					break;
 				}
 				case "n": // next event
@@ -306,46 +368,38 @@ int main(string[] argv)
 					throw new Exception("Not found");
 Lbreak:
 					break;
-				// === search and cross-references ===
-				case "eventsat": // display last events affecting an address/range
+				// === address search and cross-references ===
+				case "eventsat": // display last event(s) affecting an address/range
+				case "eventat":
 				{
 					if (analysis.cursor<0)
 						throw new Exception("No data (use 'goto' to seek to an event)");
 					uint min, max;
-					if (args.length==1)
-						throw new Exception("Specify a memory address or range");
-					else
-					if (args.length==2)
-						min = max = fromHex(args[1]);
-					else
-						min = fromHex(args[1]), max = fromHex(args[2]);
+					parseMemoryRange(args[1..$], min, max);
 
-					auto n = analysis.findNode(min, true);
+					auto n = analysis.findNodeFuzzy(min);
 					//auto event = cast(MemoryAllocationEvent)log.events[n.eventID];
-					if (n is null) throw new Exception("Out of range");
+					if (n is null) throw new Exception("Address out of range or points to unallocated region");
 					//writefln("findNode returned: p=%08X, next.p=%08X", n.p, n.next.p);
 					for (;n && n.p+analysis.getNodeSize(n)<=min;n=n.next) {}
+					int count;
 					for (; n && n.p <= max; n=n.next)
-						showEvent(n.eventID);
+						showEvent(n.eventID), count++;
+					if (count==0)
+						writefln("No events at address/range.");
 					break;
 				}
 				case "alleventsat": // display all events affecting an address/range
 				{
 					uint min, max;
-					if (args.length==1)
-						throw new Exception("Specify a memory address or range");
-					else
-					if (args.length==2)
-						min = max = fromHex(args[1]);
-					else
-						min = fromHex(args[1]), max = fromHex(args[2]);
-					foreach(i,event;log.events)
+					parseMemoryRange(args[1..$], min, max);
+					foreach (i,event;log.events)
 					{
 						uint p1, p2;
-						if (cast(MemoryAllocationEvent)event) with(cast(MemoryAllocationEvent)event)
+						if (cast(MemoryAllocationEvent)event) with (cast(MemoryAllocationEvent)event)
 							p1 = p, p2 = p + size;
 						else
-						if (cast(FreeEvent)event) with(cast(FreeEvent)event)
+						if (cast(FreeEvent)event) with (cast(FreeEvent)event)
 							p1 = p, p2 = p;
 						else
 							continue;
@@ -355,18 +409,6 @@ Lbreak:
 					break;
 				}
 				// === inspection of specific event ===
-				case "info": // display information about a specified address
-				{
-					if (analysis.cursor<0)
-						throw new Exception("No data (use 'goto' to seek to an event)");
-					if (args.length==1)
-						throw new Exception("Specify an address");
-					uint address = fromHex(args[1]);
-					auto event = cast(MemoryStateEvent)log.events[analysis.cursor];
-					if (event is null) throw new Exception("This is not a memory dump/map event.");
-					showInfo(event, address);
-					break;
-				}
 				case "stack": // display stack of current/specified event
 				{
 					int event;
@@ -374,11 +416,23 @@ Lbreak:
 						event = analysis.cursor;
 					else
 						event = toInt(args[1]);
-					foreach(func;log.events[event].stackTrace)
+					foreach (func;log.events[event].stackTrace)
 						writefln(" %08X  %s", func, mapLookUp(func));
 					break;
 				}
 				// === inspection of map/dump events ===
+				case "info": // display information about a specified address
+				{
+					if (analysis.cursor<0)
+						throw new Exception("No data (use 'goto' to seek to an event)");
+					if (args.length!=2)
+						throw new Exception("Specify an address");
+					uint address = fromHex(args[1]);
+					auto event = cast(MemoryStateEvent)log.events[analysis.cursor];
+					if (event is null) throw new Exception("This is not a memory dump/map event.");
+					showInfo(event, address);
+					break;
+				}
 				case "pools": // display memory pools
 				{
 					int eventID;
@@ -388,7 +442,7 @@ Lbreak:
 						eventID = toInt(args[1]);
 					auto event = cast(MemoryStateEvent)log.events[eventID];
 					if (event is null) throw new Exception("This is not a memory dump/map event.");
-					foreach(ref pool;event.pools)
+					foreach (ref pool;event.pools)
 						writefln("%08X - %08X, %4d/%4d/%4d pages", pool.addr, pool.topAddr, pool.npages-pool.nfree, pool.ncommitted, pool.npages);
 					break;
 				}
@@ -408,12 +462,12 @@ Lbreak:
 					auto event = cast(MemoryStateEvent)log.events[eventID];
 					if (event is null) throw new Exception("This is not a memory dump/map event.");
 					bool found;
-					foreach(ref pool;event.pools)
+					foreach (ref pool;event.pools)
 						if (address==0 || (address >= pool.addr && address < pool.topAddr))
 						{
 							writefln("Page map for pool %08X - %08X (%4d/%4d/%4d pages):", pool.addr, pool.topAddr, pool.npages-pool.nfree, pool.ncommitted, pool.npages);
 							writef("(page size = 0x1000)            +10000           +20000           +30000    ");
-							foreach(pageNr,bin;pool.pagetable)
+							foreach (pageNr,bin;pool.pagetable)
 							{
 								auto addr = pool.addr + pageNr*PAGESIZE;
 								if (pageNr%64==0)
@@ -491,13 +545,13 @@ Lbreak:
 					if (dataEvent is null) throw new Exception("This is not a memory dump event, or not directly following one.");
 					int lastEvent, count;
 					foreach (int poolNr,ref pool;event.pools)
-						for (int pageNr;pageNr<pool.ncommitted;pageNr++)
+						for (int pageNr=0;pageNr<pool.ncommitted;pageNr++)
 						{
 							uint[] data = cast(uint[])dataEvent.loadPageData(poolNr, pageNr);
 							foreach (i,v;data)
 								if (min <= v && v <= max)
 								{
-									uint address = pool.addr + pageNr*PAGESIZE * i*uint.sizeof;
+									uint address = pool.addr + pageNr*PAGESIZE + i*uint.sizeof;
 									if (!allRefs) // check if the reference is from something the GC would scan, unless the user wants to see all references
 									{
 										auto bin = pool.pagetable[pageNr];
@@ -506,9 +560,10 @@ Lbreak:
 										uint biti;
 										if (bin == B_PAGEPLUS)
 										{
-											while (pool.pagetable[pageNr]==B_PAGEPLUS)
-												pageNr--;
-											biti = pageNr*PAGESIZE/16;
+											int p = pageNr;
+											while (pool.pagetable[p]==B_PAGEPLUS)
+												p--;
+											biti = p*PAGESIZE/16;
 										}
 										else
 										{
@@ -565,13 +620,13 @@ Lbreak:
 					if (event is null && analysis.cursor>0) event = cast(MemoryDumpEvent)log.events[analysis.cursor-1];
 					if (event is null) throw new Exception("This is not a memory dump/map event.");
 					bool found;
-					foreach(int poolNr, ref pool;event.pools)
+					foreach (int poolNr, ref pool;event.pools)
 						if (pool.addr<=min && pool.topAddr>=max)
 						{
 							if (max>pool.topCommittedAddr) throw new Exception("Specified address range intersects a reserved memory region");
 							found = true;
 							ubyte[] data = event.loadPoolData(poolNr)[min-pool.addr .. max-pool.addr];
-							foreach(i,v;data)
+							foreach (i,v;data)
 							{
 								if (i%16==0)
 									writef("%08X: ", i+min);
@@ -588,7 +643,7 @@ Lbreak:
 										writef("   ");
 									}
 									writef("| ");
-									foreach(vv;data[i&~15..i+1])
+									foreach (vv;data[i&~15..i+1])
 										if (vv==0)
 											writef(" ");
 										else if (vv<32 || vv>=127)
@@ -610,24 +665,24 @@ Lbreak:
 					for (auto n = analysis.first;n;n=n.next)
 					{
 						count++;
-						assert(n.prev is null ? n is analysis.first : n is n.prev.next, "Broken chain");
-						assert(n.next is null ? n is analysis.last  : n is n.next.prev, "Broken chain");
+						check(n.prev is null ? n is analysis.first : n is n.prev.next, "Broken chain");
+						check(n.next is null ? n is analysis.last  : n is n.next.prev, "Broken chain");
 						auto event = cast(MemoryAllocationEvent)log.events[n.eventID];
-						assert(event, "Invalid event");
-						assert(n.p == event.p, "Node/Event pointer mismatch");
-						if (n.next) assert(n.p+event.size <= n.next.p, "Node continuity broken");
-						if (n.prev && (n.prev.p>>16) < (n.p>>16)) assert(analysis.map[n.p>>16] is n, "Node is not mapped");
+						check(event !is null, "Invalid event");
+						check(n.p == event.p, "Node/Event pointer mismatch");
+						if (n.next) check(n.p+event.size <= n.next.p, "Node continuity broken");
+						if (n.prev && (n.prev.p>>16) < (n.p>>16)) check(analysis.map[n.p>>16] is n, "Node is not mapped");
 					}
 					writefln("%d nodes checked.", count);
-					foreach(seg,n;analysis.map)
+					foreach (seg,n;analysis.map)
 						if (n)
 						{
 							if (n.prev)
-								assert(n.prev.p>>16 < seg, "Mapped node is not first");
+								check(n.prev.p>>16 < seg, "Mapped node is not first");
 							if (n.p>>16 < seg) // stretches across segs
-								assert(n.next is null || (n.next.p>>16) >= seg, "Mismapped node");
+								check(n.next is null || (n.next.p>>16) >= seg, "Mismapped node");
 							else
-								assert(n.p>>16 == seg, "Mismapped node");
+								check(n.p>>16 == seg, "Mismapped node");
 						}
 					writefln("Map checked.");
 					break;
@@ -639,15 +694,16 @@ Lbreak:
 				// other
 				case "help":
 					writefln("Command list. Event numbers are always in decimal, addresses are in hex.");
+					writefln("Use ^ in event numbers for start, @ for cursor position, $ for end of file.");
 					writefln("Please consult the documentation for details on specific commands.");
-					highVideo();writefln("=== General statistics ===");normVideo();
+					/*highVideo();*/writefln("=== General statistics ===");/*normVideo();*/
 					writefln("stats                              display event counts");
 					writefln("allocstats                         display top allocator call stacks");
-					highVideo();writefln("=== timeline information ===");normVideo();
+					/*highVideo();*/writefln("=== timeline information ===");/*normVideo();*/
 					writefln("dumps                              list memory dump events");
 					writefln("maps                               list memory map events");
-					writefln("events                             display events in event range");
-					highVideo();writefln("=== navigation ===");normVideo();
+					writefln("events <address> [<address2>]      display events in event range");
+					/*highVideo();*/writefln("=== navigation ===");/*normVideo();*/
 					writefln("goto <event>                       set cursor at a certain event number");
 					writefln("n[ext]                             next event");
 					writefln("p[rev]                             previous event");
@@ -657,19 +713,19 @@ Lbreak:
 					writefln("prevmap                            previous map event");
 					writefln("lastdump                           last dump event");
 					writefln("lastmap                            last map event");
-					highVideo();writefln("=== search and cross-references ===");normVideo();
-					writefln("eventsat <address> [<address2>]    show last events affecting an address/range");
+					/*highVideo();*/writefln("=== address search and cross-references ===");/*normVideo();*/
+					writefln("eventsat <address> [<address2>]    show last event(s) affecting an address/range");
 					writefln("alleventsat <address> [<address2>] show all events affecting an address/range");
-					highVideo();writefln("=== inspection of specific event ===");normVideo();
-					writefln("info <address>                     show information about a specified address");
+					/*highVideo();*/writefln("=== inspection of specific event ===");/*normVideo();*/
 					writefln("stack [<event>]                    show stack of current/specified event");
-					highVideo();writefln("=== inspection of map/dump events ===");normVideo();
+					/*highVideo();*/writefln("=== inspection of map/dump events ===");/*normVideo();*/
+					writefln("info <address>                     show information about a specified address");
 					writefln("pools [<event>]                    display memory pools");
 					writefln("map [<address>|* [<event>]]        display a memory map");
-					writefln("allrefs <address> [<address2>]     search for all references to address/range");
 					writefln("refs <address> [<address2>]        search for all references to address/range");
+					writefln("allrefs <address> [<address2>]     same, but also search unallocated memory");
 					writefln("dump <address> [<address2>]        dump memory at address/range");
-					highVideo();writefln("=== diagnostics ===");normVideo();
+					/*highVideo();*/writefln("=== diagnostics ===");/*normVideo();*/
 					writefln("integrity                          verify the validity of the analysis state");
 					writefln("freecheck                          enable/disable free list checking");
 					break;
@@ -706,7 +762,7 @@ string findMostRecent(string pattern)
 {
 	d_time newestTime;
 	string newestFile;
-	foreach(file;listdir("."))
+	foreach (file;listdir("."))
 		if (fnmatch(file, pattern))
 		{
 			d_time c, a, m;
@@ -756,19 +812,20 @@ version(linux) // use ANSI escape codes
 	/// Emphasized text
 	void highVideo()
 	{
-		writef("\x1B1m");
+		writef("\x1B[1m");
 	}
 
 	/// Darker text
 	void lowVideo()
 	{
-		writef("\x1B2m");
+		//writef("\x1B[2m"); // low-intensity - not supported by many terminals :(
+		writef("\x1B[30;1m");
 	}
 
 	/// Normal text
 	void normVideo()
 	{
-		writef("\x1B0m");
+		writef("\x1B[m");
 	}
 }
 else
@@ -781,4 +838,11 @@ else
 
 	/// Normal text
 	void normVideo() { }
+}
+
+/// Assert, but not just for debug builds
+void check(bool condition, string message)
+{
+	if (!condition)
+		throw new Exception(message);
 }
