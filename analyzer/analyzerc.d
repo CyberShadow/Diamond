@@ -178,7 +178,7 @@ int main(string[] argv)
 			writefln(" (%6d/%6d/%6d)", allocated, committed, total);
 		else
 		if (cast(TextEvent)event) with (cast(TextEvent)event)
-			writefln(" - \"%s\"", text);
+			writefln(" - \"%s\"", strip(text));
 		else
 			writefln();
 	}
@@ -316,6 +316,8 @@ int main(string[] argv)
 				{
 					int min, max;
 					parsePositionRange(args[1..$], min, max);
+					if (min<0)
+						throw new Exception("Invalid position or range");
 					for (int i=min;i<=max;i++)
 						showEvent(i);
 					break;
@@ -636,7 +638,7 @@ Lbreak:
 								writef("%02X ", v);
 								if (i%16==15 || i==data.length-1)
 								{	
-									for (int l=i+1;l<16;l++)
+									for (int l=i%16+1;l<16;l++)
 									{
 										if (l%8==0)
 											writef(" ");
@@ -696,13 +698,13 @@ Lbreak:
 					writefln("Command list. Event numbers are always in decimal, addresses are in hex.");
 					writefln("Use ^ in event numbers for start, @ for cursor position, $ for end of file.");
 					writefln("Please consult the documentation for details on specific commands.");
-					/*highVideo();*/writefln("=== General statistics ===");/*normVideo();*/
+					/*highVideo();*/writefln("=== general statistics ===");/*normVideo();*/
 					writefln("stats                              display event counts");
 					writefln("allocstats                         display top allocator call stacks");
 					/*highVideo();*/writefln("=== timeline information ===");/*normVideo();*/
 					writefln("dumps                              list memory dump events");
 					writefln("maps                               list memory map events");
-					writefln("events <address> [<address2>]      display events in event range");
+					writefln("events <event> [<event2>]          display events in event range");
 					/*highVideo();*/writefln("=== navigation ===");/*normVideo();*/
 					writefln("goto <event>                       set cursor at a certain event number");
 					writefln("n[ext]                             next event");
@@ -714,7 +716,7 @@ Lbreak:
 					writefln("lastdump                           last dump event");
 					writefln("lastmap                            last map event");
 					/*highVideo();*/writefln("=== address search and cross-references ===");/*normVideo();*/
-					writefln("eventsat <address> [<address2>]    show last event(s) affecting an address/range");
+					writefln("eventat <address> [<address2>]     show last event affecting an address/range");
 					writefln("alleventsat <address> [<address2>] show all events affecting an address/range");
 					/*highVideo();*/writefln("=== inspection of specific event ===");/*normVideo();*/
 					writefln("stack [<event>]                    show stack of current/specified event");

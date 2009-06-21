@@ -1,16 +1,33 @@
 module diamond;
 
 // options
-//version = MEMSTOMP;  // stomp on memory when it's freed
-//version = FREECHECK; // checks manual delete operations
+version = MEMSTOMP;  // stomp on memory when it's freed
+version = FREECHECK; // checks manual delete operations
 
 version = MEMLOG;    // log memory operations and content 
-//version = MEMLOG_VERBOSE; // save memory dumps before and after every allocation - use sparingly
+//version = MEMLOG_VERBOSE; // save memory dumps before and after memory operations
+//const MEMLOG_VERBOSE_STEP = 1; // do a full memory dump every ... allocations
 version = MEMLOG_CRC32; // incremental memory dumps using CRC sums to skip logging memory pages that haven't changed between memory dumps
 const LOGDIR = ``;   // path prefix for memory logs
 
+/++
+  TODO: add hooks for:
+ulong _d_newarrayT(TypeInfo ti, size_t length)
+ulong _d_newarrayiT(TypeInfo ti, size_t length)
+ulong _d_newarraymT(TypeInfo ti, int ndims, ...)
+ulong _d_newarraymiT(TypeInfo ti, int ndims, ...)
+byte[] _d_arraysetlengthT(TypeInfo ti, size_t newlength, Array *p)
+byte[] _d_arraysetlengthiT(TypeInfo ti, size_t newlength, Array *p)
+long _d_arrayappendT(TypeInfo ti, Array *px, byte[] y)
+byte[] _d_arrayappendcT(TypeInfo ti, inout byte[] x, ...)
+byte[] _d_arraycatT(TypeInfo ti, byte[] x, byte[] y)
+byte[] _d_arraycatnT(TypeInfo ti, uint n, ...)
+void* _d_arrayliteralT(TypeInfo ti, size_t length, ...)
+long _adDupT(TypeInfo ti, Array2 a) - ?
++/
+
 // system configuration
-const _SC_PAGE_SIZE = 30;  // IMPORTANT: may require changing on your platform, look it up in your C headers
+version(linux) const _SC_PAGE_SIZE = 30;  // IMPORTANT: may require changing on your platform, look it up in your C headers
 
 private:
 
@@ -223,7 +240,7 @@ final class DiamondGC : GC
 				logDword(p);
 				logDword(size);			
 			}
-		version(MEMLOG_VERBOSE) logMemoryDump(true);
+		version(MEMLOG_VERBOSE) verboseLog();
 	}
 
 	final void callocHandler(size_t size, void* p)
@@ -238,7 +255,7 @@ final class DiamondGC : GC
 				logDword(p);			
 				logDword(size);			
 			}
-		version(MEMLOG_VERBOSE) logMemoryDump(true);
+		version(MEMLOG_VERBOSE) verboseLog();
 	}
 
 	final void reallocHandler(size_t size, void* p1, void* p2)
@@ -254,7 +271,7 @@ final class DiamondGC : GC
 				logDword(p2);
 				logDword(size);			
 			}
-		version(MEMLOG_VERBOSE) logMemoryDump(true);
+		version(MEMLOG_VERBOSE) verboseLog();
 	}
 
 	override size_t extend(void* p, size_t minsize, size_t maxsize) 
@@ -269,7 +286,7 @@ final class DiamondGC : GC
 				logDword(p);
 				logDword(result);
 			}
-		version(MEMLOG_VERBOSE) logMemoryDump(true);
+		version(MEMLOG_VERBOSE) verboseLog();
 		return result;
 	}
 
@@ -298,7 +315,7 @@ final class DiamondGC : GC
 			logStackTrace();
 			logDword(p);
 		}
-		version(MEMLOG_VERBOSE) logMemoryDump(true);
+		version(MEMLOG_VERBOSE) verboseLog();
 		version(MEMSTOMP)
 		{
 			auto c = capacity(p);
@@ -308,21 +325,21 @@ final class DiamondGC : GC
 		}
 		else
 			super.free(p); 
-		version(MEMLOG_VERBOSE) logMemoryDump(true);
+		version(MEMLOG_VERBOSE) verboseLog();
 	}
 
 	version(Tango)
 	{
-		override void *malloc(size_t size, uint bits) { version(MEMLOG_VERBOSE) logMemoryDump(true); auto result = super.malloc(size, bits); mallocHandler(size, result); return result; }
-		override void *calloc(size_t size, uint bits) { version(MEMLOG_VERBOSE) logMemoryDump(true); auto result = super.calloc(size, bits); callocHandler(size, result); return result; }
-		override void *realloc(void *p, size_t size, uint bits) { version(MEMLOG_VERBOSE) logMemoryDump(true); auto result = super.realloc(p, size, bits); reallocHandler(size, p, result); return result; }
+		override void *malloc(size_t size, uint bits) { version(MEMLOG_VERBOSE) verboseLog(); auto result = super.malloc(size, bits); mallocHandler(size, result); return result; }
+		override void *calloc(size_t size, uint bits) { version(MEMLOG_VERBOSE) verboseLog(); auto result = super.calloc(size, bits); callocHandler(size, result); return result; }
+		override void *realloc(void *p, size_t size, uint bits) { version(MEMLOG_VERBOSE) verboseLog(); auto result = super.realloc(p, size, bits); reallocHandler(size, p, result); return result; }
 		alias sizeOf capacity;
 	}
 	else
 	{
-		override void *malloc(size_t size) { version(MEMLOG_VERBOSE) logMemoryDump(true); auto result = super.malloc(size); mallocHandler(size, result); return result; }
-		override void *calloc(size_t size, size_t n) { version(MEMLOG_VERBOSE) logMemoryDump(true); auto result = super.calloc(size, n); callocHandler(size*n, result); return result; }
-		override void *realloc(void *p, size_t size) { version(MEMLOG_VERBOSE) logMemoryDump(true); auto result = super.realloc(p, size); reallocHandler(size, p, result); return result; }
+		override void *malloc(size_t size) { version(MEMLOG_VERBOSE) verboseLog(); auto result = super.malloc(size); mallocHandler(size, result); return result; }
+		override void *calloc(size_t size, size_t n) { version(MEMLOG_VERBOSE) verboseLog(); auto result = super.calloc(size, n); callocHandler(size*n, result); return result; }
+		override void *realloc(void *p, size_t size) { version(MEMLOG_VERBOSE) verboseLog(); auto result = super.realloc(p, size); reallocHandler(size, p, result); return result; }
 	}
 }
 
@@ -400,6 +417,14 @@ version(MEMLOG)
 			//printf("Done\n");
 		}
 	}
+
+	version(MEMLOG_VERBOSE)
+		void verboseLog()
+		{
+			static int n = 0;
+			if (n++ % MEMLOG_VERBOSE_STEP == 0)
+				logMemoryDump(true);
+		}
 
 	extern(C) public void logText(char[] text)
 	{
