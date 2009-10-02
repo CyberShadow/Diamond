@@ -492,22 +492,26 @@ Lbreak:
 					auto event = cast(MemoryStateEvent)log.events[eventID];
 					if (event is null) throw new Exception("This is not a memory dump/map event.");
 					bool found;
+					int columns = (getWidth() - 10) / 17;
+					if (columns > 16) columns = 16;
 					foreach (ref pool;event.pools)
 						if (address==0 || (address >= pool.addr && address < pool.topAddr))
 						{
 							writefln("Page map for pool %08X - %08X (%4d/%4d/%4d pages):", pool.addr, pool.topAddr, pool.npages-pool.nfree, pool.ncommitted, pool.npages);
-							writef("(page size = 0x1000)            +10000           +20000           +30000    ");
+							writef("(page size = 0x1000)      ");
+							for (int i=1;i<columns;i++)
+								writef("      +%X0000     ", i);
 							foreach (pageNr,bin;pool.pagetable)
 							{
 								auto addr = pool.addr + pageNr*PAGESIZE;
-								if (pageNr%64==0)
-								{
-									writefln;
-									writef("%08X: ", addr);
-								}
-								else
 								if (pageNr%16==0)
-									writef(' ');
+									if (pageNr/16%columns==0)
+									{
+										writefln;
+										writef("%08X: ", addr);
+									}
+									else
+										writef(' ');
 								bool hasScan, hasNoScan;
 								// does this page have pointers?
 								if (bin<=B_PAGEPLUS)
@@ -832,12 +836,8 @@ string findMostRecent(string pattern)
 
 version(Windows) // use Windows API to set the colour
 {
-	extern(Windows) extern bool SetConsoleTextAttribute(uint, ushort);
-	extern(Windows) extern uint GetStdHandle(int);
-	enum
-	{
-		STD_OUTPUT_HANDLE = -11
-	}
+	import std.c.windows.windows;
+	extern(Windows) extern HANDLE GetStdHandle(int);
 
 	/// Emphasized text
 	void highVideo()
@@ -859,10 +859,21 @@ version(Windows) // use Windows API to set the colour
 		fflush(stdout);
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 7);
 	}
+
+	/// Get terminal width
+	uint getWidth()
+	{
+		CONSOLE_SCREEN_BUFFER_INFO csbi;
+
+		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+		return csbi.dwSize.X;
+	}
 }
 else
 version(linux) // use ANSI escape codes
 {
+	import std.c.stdlib;
+	
 	/// Emphasized text
 	void highVideo()
 	{
@@ -881,6 +892,15 @@ version(linux) // use ANSI escape codes
 	{
 		writef("\x1B[m");
 	}
+
+	/// Get terminal width
+	uint getWidth()
+	{
+		try
+			toUint(toString(getenv("COLUMNS")));
+		catch(Object o)
+			return 80;
+	}
 }
 else
 {
@@ -892,6 +912,9 @@ else
 
 	/// Normal text
 	void normVideo() { }
+
+	/// Get terminal width
+	uint getWidth() { return 80; }
 }
 
 /// Assert, but not just for debug builds
