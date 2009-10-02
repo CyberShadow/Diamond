@@ -189,47 +189,75 @@ int main(string[] argv)
 			foreach (ref epool;event.pools)
 				if (p >= epool.addr && p < epool.topAddr)
 					{ pool = &epool; break; }
-		if (pool is null)
-			throw new Exception("Specified address does not belong in any pool.");
 		writef("%08X", p);
 		if (value)
 			writef(" -> %08X", value);
-		uint pageNr = (p-pool.addr)/PAGESIZE;
-		assert(pageNr < pool.npages);
-		auto bin = pool.pagetable[pageNr];
-		writef(" - %s", pageNames[bin]);
-		Node* n = analysis.findNode(p);
-		int biti = -1;
-		if (n)
+		if (pool)
 		{
-			writef(", event #%d (%08X - %08X)", n.eventID, n.p, n.p+analysis.getNodeSize(n));
-			biti = (n.p-pool.addr)/16;
-		}
-		else
-		{
-			writef(", not allocated");
-			if (bin == B_PAGEPLUS)
+			uint pageNr = (p-pool.addr)/PAGESIZE;
+			assert(pageNr < pool.npages);
+			auto bin = pool.pagetable[pageNr];
+			writef(" - %s", pageNames[bin]);
+			Node* n = analysis.findNode(p);
+			int biti = -1;
+			if (n)
 			{
-				while (pool.pagetable[pageNr]==B_PAGEPLUS)
-					pageNr--;
-				biti = pageNr*PAGESIZE/16;
+				writef(", event #%d (%08X - %08X)", n.eventID, n.p, n.p+analysis.getNodeSize(n));
+				biti = (n.p-pool.addr)/16;
 			}
 			else
-			if (bin <= B_PAGE)
 			{
-				uint startAddr = p & ~(pageSizes[bin]-1);
-				biti = (startAddr-pool.addr)/16;
+				writef(", not allocated");
+				if (bin == B_PAGEPLUS)
+				{
+					while (pool.pagetable[pageNr]==B_PAGEPLUS)
+						pageNr--;
+					biti = pageNr*PAGESIZE/16;
+				}
+				else
+				if (bin <= B_PAGE)
+				{
+					uint startAddr = p & ~(pageSizes[bin]-1);
+					biti = (startAddr-pool.addr)/16;
+				}
+			}
+			if (biti>=0)
+			{
+				if (Pool.readBit(pool.noscan, biti))
+					writef(", NOSCAN");
+				if (pool.finals.length && Pool.readBit(pool.finals, biti))
+					writef(", FINALS");
+				if (Pool.readBit(pool.freebits, biti))
+					writef(", FREE");
 			}
 		}
-		if (biti>=0)
+		else
+		if (p >= event.stackTop && p < event.stackBottom)
 		{
-			if (Pool.readBit(pool.noscan, biti))
-				writef(", NOSCAN");
-			if (pool.finals.length && Pool.readBit(pool.finals, biti))
-				writef(", FINALS");
-			if (Pool.readBit(pool.freebits, biti))
-				writef(", FREE");
+			auto dataEvent = cast(MemoryDumpEvent)event;
+			if (dataEvent)
+			{
+				uint f, n=dataEvent.ebp, s=0;
+				while (n>s && n<event.stackBottom)
+				{
+					if (n > p)
+					{
+						f = s ? dataEvent.readDword(s+4) : 0;
+						break;
+					}
+					s = n;
+					n = dataEvent.readDword(n);
+				}
+				if (f)
+					writef(" - in stack frame %08X-%08X of %08X - %s", s, n, f, mapLookUp(f));
+				else
+					writef(" - in stack (can't find frame)");
+			}
+			else
+				writef(" - in stack (no data)");
 		}
+		else
+			writef(" - outside heap/stack");
 		writefln();
 	}
 
@@ -522,6 +550,20 @@ Lbreak:
 						throw new Exception("Specified address does not belong in any pool.");
 					break;
 				}
+				case "stackinfo":
+				{
+					int eventID;
+					if (args.length==1)
+						eventID = analysis.cursor;
+					else
+						eventID = toInt(args[1]);
+					auto event = cast(MemoryStateEvent)log.events[eventID];
+					if (event is null) throw new Exception("This is not a memory dump/map event.");
+					writefln("ESP    = %08X (stack top)", event.stackTop);
+					writefln("EBP    = %08X", event.ebp);
+					writefln("bottom = %08X", event.stackBottom);
+					break;
+				}
 				case "allrefs": // search for all references to address/range
 					allRefs = true;
 					goto Lroots;
@@ -590,7 +632,15 @@ Lbreak:
 									if (eventID==0 || count<=10)
 										showInfo(event, address, &pool, v);
 								}
+							delete data;
 						}
+
+					uint[] data = cast(uint[])dataEvent.loadStackData();
+					foreach (i,v;data)
+						if (min <= v && v <= max)
+							showInfo(event, dataEvent.stackTop + i*uint.sizeof, null, v);
+					delete data;
+
 					if (lastEvent && count>10)
 						writefln("... and %d more from event #%d", count-10, lastEvent);
 					break;
@@ -655,6 +705,7 @@ Lbreak:
 									writefln;
 								}
 							}
+							delete data;
 						}
 					if (!found)
 						throw new Exception("Specified address range does not belong in any pool.");
@@ -724,6 +775,7 @@ Lbreak:
 					writefln("info <address>                     show information about a specified address");
 					writefln("pools [<event>]                    display memory pools");
 					writefln("map [<address>|* [<event>]]        display a memory map");
+					writefln("stackinfo [<event>]                display stack information");
 					writefln("refs <address> [<address2>]        search for all references to address/range");
 					writefln("allrefs <address> [<address2>]     same, but also search unallocated memory");
 					writefln("dump <address> [<address2>]        dump memory at address/range");

@@ -90,6 +90,16 @@ void** ebp()
 	}
 }
 
+void* esp()
+{
+	asm
+	{
+		naked;
+		mov EAX, ESP;
+		ret;
+	}
+}
+
 public void printStackTrace()
 {
 	auto bottom = os_query_stackBottom();
@@ -345,7 +355,7 @@ final class DiamondGC : GC
 
 version(MEMLOG)
 {
-	const uint FORMAT_VERSION = 2; // format of the log file
+	const uint FORMAT_VERSION = 3; // format of the log file
 
 	version(MEMLOG_CRC32)
 	{
@@ -371,6 +381,16 @@ version(MEMLOG)
 			logDword(dataDump ? PACKET_MEMORY_DUMP : PACKET_MEMORY_MAP);
 			logDword(time(null));
 			logStackTrace();
+			
+			// log stack
+			void* stackTop = esp();
+			void* stackBottom = gcx.stackBottom;
+			logDword(stackTop);
+			logDword(stackBottom);
+			logDword(ebp);
+			if (dataDump)
+				logData(stackTop[0..stackBottom-stackTop]);
+			
 			logDword(gcx.npools);
 			for (int pn=0;pn<gcx.npools;pn++)
 			{

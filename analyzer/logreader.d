@@ -45,7 +45,7 @@ string[B_MAX] pageNames = ["B_16", "B_32", "B_64", "B_128", "B_256", "B_512", "B
 
 alias void delegate(ulong pos, ulong max) LogProgressDelegate;
 
-const uint FORMAT_VERSION = 2; // format of the log file
+const uint FORMAT_VERSION = 3; // format of the log file
 
 final class LogReader
 {
@@ -240,10 +240,21 @@ final class LogReader
 	class MemoryStateEvent : MemoryEvent
 	{
 		Pool[] pools;
+		uint stackTop, stackBottom, ebp;
+		ulong stackOffset;
 		
 		this(bool data)
 		{
 			super();
+			stackTop = readDword();
+			stackBottom = readDword();
+			ebp = readDword();
+			assert(stackTop%4 == 0 && stackBottom%4 == 0);
+			if (data)
+			{
+				stackOffset = f.position;
+				f.seekCur(stackBottom - stackTop);
+			}
 			pools.length = readDword();
 			if (pageOffsetHistory.length < pools.length)
 				pageOffsetHistory.length = pools.length;
@@ -348,10 +359,21 @@ final class LogReader
 			return result;
 		}
 
+		final ubyte[] loadStackData()
+		{
+			f.seekSet(stackOffset);
+			return readData(stackBottom - stackTop);
+		}
+
 		final uint readDword(uint addr)
 		{
+			if (addr >= stackTop && addr < stackBottom)
+			{
+				f.seekSet(stackOffset + addr-stackTop);
+				return this.outer.readDword();
+			}
 			auto pool = findPool(addr);
-			if (pool is null) throw new Exception(format("Specified memory address %08X does not belong in any memory pool", addr));
+			if (pool is null) throw new Exception(format("Specified memory address %08X does not belong in the stack or any memory pool", addr));
 			if (addr>=pool.topCommittedAddr) throw new Exception(format("Specified memory address %08X is in a reserved memory region", addr));
 			f.seekSet(pool.dataOffsets[(addr-pool.addr)/PAGESIZE] + (addr-pool.addr)%PAGESIZE);
 			return this.outer.readDword();
