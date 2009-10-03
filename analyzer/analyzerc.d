@@ -19,7 +19,7 @@ char  [B_MAX] pageChars = "45678901P+.x";
 
 int main(string[] argv)
 {
-	writefln("Diamond Memory Log Analyzer, v0.1");
+	writefln("Diamond Memory Log Analyzer, v0.2");
 	writefln("by Vladimir \"CyberShadow\" Panteleev, 2008-2009");
 	writefln();
 	
