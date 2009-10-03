@@ -270,6 +270,37 @@ int main(string[] argv)
 		writefln();
 	}
 
+	void dump(ubyte[] data, uint startAddr)
+	{
+		foreach (i,v;data)
+		{
+			if (i%16==0)
+				writef("%08X: ", i+startAddr);
+			else
+			if (i%8==0)
+				writef(" ");
+			writef("%02X ", v);
+			if (i%16==15 || i==data.length-1)
+			{	
+				for (int l=i%16+1;l<16;l++)
+				{
+					if (l%8==0)
+						writef(" ");
+					writef("   ");
+				}
+				writef("| ");
+				foreach (vv;data[i&~15..i+1])
+					if (vv==0)
+						writef(" ");
+					else if (vv<32 || vv>=127)
+						writef(".");
+					else
+						writef(cast(char)vv);
+				writefln;
+			}
+		}
+	}
+
 	while (true)
 	{
 		highVideo();
@@ -771,45 +802,55 @@ Lbreak:
 						min = fromHex(args[1]), max = fromHex(args[2]);
 					auto event = cast(MemoryDumpEvent)log.events[analysis.cursor];
 					if (event is null && analysis.cursor>0) event = cast(MemoryDumpEvent)log.events[analysis.cursor-1];
-					if (event is null) throw new Exception("This is not a memory dump/map event.");
+					if (event is null) throw new Exception("This is not a memory dump event.");
 					bool found;
 					foreach (int poolNr, ref pool;event.pools)
 						if (pool.addr<=min && pool.topAddr>=max)
 						{
 							if (max>pool.topCommittedAddr) throw new Exception("Specified address range intersects a reserved memory region");
 							found = true;
-							ubyte[] data = event.loadPoolData(poolNr)[min-pool.addr .. max-pool.addr];
-							foreach (i,v;data)
-							{
-								if (i%16==0)
-									writef("%08X: ", i+min);
-								else
-								if (i%8==0)
-									writef(" ");
-								writef("%02X ", v);
-								if (i%16==15 || i==data.length-1)
-								{	
-									for (int l=i%16+1;l<16;l++)
-									{
-										if (l%8==0)
-											writef(" ");
-										writef("   ");
-									}
-									writef("| ");
-									foreach (vv;data[i&~15..i+1])
-										if (vv==0)
-											writef(" ");
-										else if (vv<32 || vv>=127)
-											writef(".");
-										else
-											writef(cast(char)vv);
-									writefln;
-								}
-							}
+							ubyte[] data = event.loadPoolData(poolNr);
+							dump(data[min-pool.addr .. max-pool.addr], min);
 							delete data;
 						}
 					if (!found)
-						throw new Exception("Specified address range does not belong in any pool.");
+						if (event.stackTop<=min && event.stackBottom>=max)
+						{
+							found = true;
+							ubyte[] data = event.loadStackData();
+							dump(data[min-event.stackTop .. max-event.stackTop], min);
+							delete data;
+						}
+					if (!found)
+						foreach (ref root; event.roots)
+							if (root.bottom<=min && root.top>=max)
+							{
+								found = true;
+								ubyte[] data = event.loadRootData(root);
+								dump(data[min-root.bottom.. max-root.bottom], min);
+								delete data;
+							}
+					if (!found)
+						throw new Exception("Data for specified address range is not available.");
+					break;
+				}
+				// === symbols ===
+				case "symbol":
+				case "symbols":
+				{
+					if (args.length!=2)
+						throw new Exception("Specify a search pattern");
+					foreach (ref symbol; map.symbols)
+						if (symbol.name.find(args[1])>=0)
+							writefln("%08X - %s", symbol.address, symbol.prettyName());
+					break;
+				}
+				case "symbolat":
+				{
+					if (args.length!=2)
+						throw new Exception("Specify an address");
+					uint address = fromHex(args[1]);
+					writefln("%08X - %s", address, mapLookUp(address));
 					break;
 				}
 				// === diagnostics ===
@@ -847,6 +888,7 @@ Lbreak:
 					break;
 				// other
 				case "help":
+				case "?":
 					writefln("Command list. Event numbers are always in decimal, addresses are in hex.");
 					writefln("Use ^ in event numbers for start, @ for cursor position, $ for end of file.");
 					writefln("Please consult the documentation for details on specific commands.");
@@ -882,6 +924,9 @@ Lbreak:
 					writefln("refs <address> [<address2>]        search for all references to address/range");
 					writefln("allrefs <address> [<address2>]     same, but also search unallocated memory");
 					writefln("dump <address> [<address2>]        dump memory at address/range");
+					/*highVideo();*/writefln("=== symbols ===");/*normVideo();*/
+					writefln("symbol <symbol>                    show symbols matching name");
+					writefln("symbolat <address>                 look up symbol by offset");
 					/*highVideo();*/writefln("=== diagnostics ===");/*normVideo();*/
 					writefln("integrity                          verify the validity of the analysis state");
 					writefln("freecheck                          enable/disable free list checking");
