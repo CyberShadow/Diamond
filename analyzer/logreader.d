@@ -45,7 +45,7 @@ string[B_MAX] pageNames = ["B_16", "B_32", "B_64", "B_128", "B_256", "B_512", "B
 
 alias void delegate(ulong pos, ulong max) LogProgressDelegate;
 
-const uint FORMAT_VERSION = 3; // format of the log file
+const uint FORMAT_VERSION = 4; // format of the log file
 
 final class LogReader
 {
@@ -235,6 +235,12 @@ final class LogReader
 		}
 	}
 
+	struct Root
+	{
+		uint bottom, top;
+		ulong dataOffset;
+	}
+		
 	private ulong[][] pageOffsetHistory;
 
 	class MemoryStateEvent : MemoryEvent
@@ -242,10 +248,12 @@ final class LogReader
 		Pool[] pools;
 		uint stackTop, stackBottom, ebp;
 		ulong stackOffset;
-		
+		Root[] roots;
+
 		this(bool data)
 		{
 			super();
+			
 			stackTop = readDword();
 			stackBottom = readDword();
 			ebp = readDword();
@@ -255,6 +263,20 @@ final class LogReader
 				stackOffset = f.position;
 				f.seekCur(stackBottom - stackTop);
 			}
+			
+			roots.length = readDword();
+			foreach (ref root; roots)
+			{
+				root.bottom = readDword();
+				root.top = readDword();
+				if (data)
+					if (readDword())
+					{
+						root.dataOffset = f.position;
+						f.seekCur(root.top - root.bottom);
+					}
+			}
+
 			pools.length = readDword();
 			if (pageOffsetHistory.length < pools.length)
 				pageOffsetHistory.length = pools.length;
@@ -365,6 +387,14 @@ final class LogReader
 			return readData(stackBottom - stackTop);
 		}
 
+		final ubyte[] loadRootData(ref Root root)
+		{
+			if (!root.dataOffset)
+				throw new Exception(format("No data for root area %08X-%08X", root.bottom, root.top));
+			f.seekSet(root.dataOffset);
+			return readData(root.top - root.bottom);
+		}
+
 		final uint readDword(uint addr)
 		{
 			if (addr >= stackTop && addr < stackBottom)
@@ -373,10 +403,23 @@ final class LogReader
 				return this.outer.readDword();
 			}
 			auto pool = findPool(addr);
-			if (pool is null) throw new Exception(format("Specified memory address %08X does not belong in the stack or any memory pool", addr));
-			if (addr>=pool.topCommittedAddr) throw new Exception(format("Specified memory address %08X is in a reserved memory region", addr));
-			f.seekSet(pool.dataOffsets[(addr-pool.addr)/PAGESIZE] + (addr-pool.addr)%PAGESIZE);
-			return this.outer.readDword();
+			if (pool)
+			{
+				if (addr>=pool.topCommittedAddr) throw new Exception(format("Specified memory address %08X is in a reserved memory region", addr));
+				f.seekSet(pool.dataOffsets[(addr-pool.addr)/PAGESIZE] + (addr-pool.addr)%PAGESIZE);
+				return this.outer.readDword();
+			}
+			foreach (ref root; roots)
+				if (addr >= root.bottom && addr < root.top)
+					if (root.dataOffset)
+					{
+						f.seekSet(root.dataOffset + addr-root.bottom);
+						return this.outer.readDword();
+					}
+					else
+						throw new Exception(format("Specified memory address %08X is in a root zone outside the heap, however there is no data for this root area.", addr));
+
+			throw new Exception(format("Specified memory address %08X is at an unknown location", addr));
 		}
 	}
 

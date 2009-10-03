@@ -183,12 +183,18 @@ int main(string[] argv)
 			writefln();
 	}
 
-	void showInfo(MemoryStateEvent event, uint p, Pool* pool=null, uint value=0)
+	void showInfo(MemoryStateEvent event, uint p, Pool* pool=null, int rootIndex = -1, uint value=0)
 	{
-		if (pool is null)
+		if (pool is null && rootIndex==-1)
+		{
 			foreach (ref epool;event.pools)
 				if (p >= epool.addr && p < epool.topAddr)
 					{ pool = &epool; break; }
+			if (pool is null)
+				foreach (i, ref root; event.roots)
+					if (p >= root.bottom && p < root.top)
+						rootIndex = i;
+		}
 		writef("%08X", p);
 		if (value)
 			writef(" -> %08X", value);
@@ -231,6 +237,9 @@ int main(string[] argv)
 					writef(", FREE");
 			}
 		}
+		else
+		if (rootIndex >= 0)
+			writef(" - in root range %08X - %08X", event.roots[rootIndex].bottom, event.roots[rootIndex].top);
 		else
 		if (p >= event.stackTop && p < event.stackBottom)
 		{
@@ -554,6 +563,69 @@ Lbreak:
 						throw new Exception("Specified address does not belong in any pool.");
 					break;
 				}
+				case "binmap": // display a map of the specified memory page
+				{
+					if (args.length<2)
+						throw new Exception("Specify an address");
+					uint address = fromHex(args[1]);
+					int eventID = analysis.cursor;
+					if (args.length>2)
+						eventID = toInt(args[2]);
+					if (eventID<0)
+						throw new Exception("No data (specify or goto event)");
+					auto event = cast(MemoryStateEvent)log.events[eventID];
+					if (event is null) throw new Exception("This is not a memory dump/map event.");
+					Pool* pool;
+					foreach (ref epool;event.pools)
+						if (address >= epool.addr && address < epool.topAddr)
+							{ pool = &epool; break; }
+					if (pool is null)
+						throw new Exception("Specified address does not belong in any pool.");
+					uint pageNr = (address-pool.addr) / PAGESIZE;
+					auto bin = pool.pagetable[pageNr];
+					if (bin >= B_PAGE)
+						throw new Exception("This page is not a bin page.");
+					auto binsize = pageSizes[bin];
+					auto objectCount = PAGESIZE / binsize;
+					auto step = binsize/16;
+
+					int columns = 4;
+					if (objectCount/16 < 4)
+						columns = objectCount/16;
+					writefln("Bin map for page %08X - %08X:", pool.addr + pageNr*PAGESIZE, pool.addr + (pageNr+1)*PAGESIZE);
+					writef("(object size = 0x%03X)     ", binsize);
+					for (int i=1;i<columns;i++)
+						writef("       +%03X      ", i*16*binsize);
+					for (uint i=0;i<objectCount;i++)
+					{
+						uint biti = (PAGESIZE/16)*pageNr + i*step;
+						auto addr = pool.addr + pageNr*PAGESIZE + i*binsize;
+						if (i%16==0)
+							if (i/16%columns==0)
+							{
+								writefln;
+								writef("%08X: ", addr);
+							}
+							else
+								writef(' ');
+						bool free   = Pool.readBit(pool.freebits, biti);
+						bool noscan = Pool.readBit(pool.noscan  , biti);
+						bool finals = Pool.readBit(pool.finals  , biti);
+						if (free)
+							writef('.');
+						else
+						{
+							if (noscan)
+								lowVideo();
+							else
+								highVideo();
+							writef(finals ? 'C' : 'D');
+							normVideo();
+						}
+					}
+					writefln();
+					break;
+				}
 				case "stackinfo":
 				{
 					int eventID;
@@ -566,6 +638,19 @@ Lbreak:
 					writefln("ESP    = %08X (stack top)", event.stackTop);
 					writefln("EBP    = %08X", event.ebp);
 					writefln("bottom = %08X", event.stackBottom);
+					break;
+				}
+				case "roots":
+				{
+					int eventID;
+					if (args.length==1)
+						eventID = analysis.cursor;
+					else
+						eventID = toInt(args[1]);
+					auto event = cast(MemoryStateEvent)log.events[eventID];
+					if (event is null) throw new Exception("This is not a memory dump/map event.");
+					foreach (ref root; event.roots)
+						writefln("%08X - %08X (%d bytes)", root.bottom, root.top, root.top - root.bottom);
 					break;
 				}
 				case "allrefs": // search for all references to address/range
@@ -597,7 +682,7 @@ Lbreak:
 						{
 							uint[] data = cast(uint[])dataEvent.loadPageData(poolNr, pageNr);
 							foreach (i,v;data)
-								if (min <= v && v <= max)
+								if (min <= v && v < max)
 								{
 									uint address = pool.addr + pageNr*PAGESIZE + i*uint.sizeof;
 									if (!allRefs) // check if the reference is from something the GC would scan, unless the user wants to see all references
@@ -619,6 +704,8 @@ Lbreak:
 											biti = (startAddr-pool.addr)/16;
 										}
 										//writefln("address=%08X, page=%s, startAddr => %08X", address, pageNames[bin], startAddr);
+										if (bin < B_PAGE && Pool.readBit(pool.freebits, biti))
+											continue;
 										if (Pool.readBit(pool.noscan, biti))
 											continue;
 									}
@@ -634,16 +721,26 @@ Lbreak:
 									}
 									count++;
 									if (eventID==0 || count<=10)
-										showInfo(event, address, &pool, v);
+										showInfo(dataEvent, address, &pool, -1, v);
 								}
 							delete data;
 						}
 
 					uint[] data = cast(uint[])dataEvent.loadStackData();
 					foreach (i,v;data)
-						if (min <= v && v <= max)
-							showInfo(event, dataEvent.stackTop + i*uint.sizeof, null, v);
+						if (min <= v && v < max)
+							showInfo(dataEvent, dataEvent.stackTop + i*uint.sizeof, null, -1, v);
 					delete data;
+
+					foreach (rootIndex, ref root; dataEvent.roots)
+						if (root.top - root.bottom != 0)
+						{
+							data = cast(uint[])dataEvent.loadRootData(root);
+							foreach (i,v;data)
+								if (min <= v && v < max)
+									showInfo(dataEvent, root.bottom + i*uint.sizeof, null, rootIndex, v);
+							delete data;
+						}
 
 					if (lastEvent && count>10)
 						writefln("... and %d more from event #%d", count-10, lastEvent);
@@ -779,7 +876,9 @@ Lbreak:
 					writefln("info <address>                     show information about a specified address");
 					writefln("pools [<event>]                    display memory pools");
 					writefln("map [<address>|* [<event>]]        display a memory map");
+					writefln("binmap <address> [<event>]         display a map of the specified memory page");
 					writefln("stackinfo [<event>]                display stack information");
+					writefln("roots [<event>]                    display root ranges");
 					writefln("refs <address> [<address2>]        search for all references to address/range");
 					writefln("allrefs <address> [<address2>]     same, but also search unallocated memory");
 					writefln("dump <address> [<address2>]        dump memory at address/range");

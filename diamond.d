@@ -355,7 +355,7 @@ final class DiamondGC : GC
 
 version(MEMLOG)
 {
-	const uint FORMAT_VERSION = 3; // format of the log file
+	const uint FORMAT_VERSION = 4; // format of the log file
 
 	version(MEMLOG_CRC32)
 	{
@@ -390,6 +390,24 @@ version(MEMLOG)
 			logDword(ebp);
 			if (dataDump)
 				logData(stackTop[0..stackBottom-stackTop]);
+
+			void logRoots(void* bottom, void* top)
+			{
+				logDword(bottom);
+				logDword(top);
+				if (dataDump)
+					if (gcx.findPool(bottom)) // in heap?
+						logDword(0);
+					else
+					{
+						logDword(1);
+						logData(bottom[0..cast(ubyte*)top-cast(ubyte*)bottom]);
+					}
+			}
+			logDword(gcx.nranges+1);
+			logRoots(gcx.roots, gcx.roots + gcx.nroots);
+			foreach (ref range; gcx.ranges[0..gcx.nranges])
+				logRoots(range.pbot, range.ptop);
 			
 			logDword(gcx.npools);
 			for (int pn=0;pn<gcx.npools;pn++)
