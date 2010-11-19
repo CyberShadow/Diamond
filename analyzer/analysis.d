@@ -36,10 +36,11 @@ final:
 				{
 					case PACKET_MALLOC:
 					case PACKET_CALLOC:
+					case PACKET_REALLOC:
 					case PACKET_EXTEND:
 					{
 						auto event = cast(MemoryAllocationEvent)log.events[cursor];
-						if (event.type==PACKET_EXTEND)
+						if (event.type==PACKET_EXTEND || (event.type==PACKET_REALLOC && (cast(ReallocEvent)event).oldp==event.p))
 						{
 							auto n = findNode(event.p);
 							if (n is null) throw new Exception(format("Can't find node to extend at %08X", event.p));
@@ -134,7 +135,7 @@ final:
 									uint p = event.buckets[bin];
 									while (p)
 									{
-										string prevstr = prev ? format("following %08X", prev) : "first list item";
+										string prevstr() { return prev ? format("following %08X", prev) : "first list item"; }
 										
 										auto pool = event.findPool(p);
 										if (pool is null) throw new Exception(format("Free list item %08X (%s) does not belong in any memory pool", p, prevstr));
@@ -160,10 +161,10 @@ final:
 					case PACKET_TEXT:
 						break;
 					default:
-						throw new Exception("Unknown packet type");
+						throw new Exception(format("Unknown packet type %d", log.events[cursor].type));
 				}
-				catch(Exception e)
-					throw new Exception(format("Error while processing event #%d: %s", cursor--, e.msg));
+			catch(Exception e)
+				throw new Exception(format("Error while processing event #%d: %s", cursor--, e.msg));
 		}
 	}
 

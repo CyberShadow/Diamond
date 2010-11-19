@@ -163,6 +163,14 @@ int main(string[] argv)
 	{
 		auto event = log.events[i];
 		writef("%7d @ %s: %-7s", i, timeStr(event.time), shortEventNames[event.type]);
+		if (cast(ReallocEvent)event) with (cast(ReallocEvent)event)
+		{
+			writef(" %08X -> %08X - %08X (%d bytes)", oldp, p, p+size, size);
+			if (className)
+				writefln(" %s", className);
+			writefln;
+		}
+		else
 		if (cast(MemoryAllocationEvent)event) with (cast(MemoryAllocationEvent)event)
 		{
 			writef(" %08X - %08X (%d bytes)", p, p+size, size);

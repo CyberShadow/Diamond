@@ -163,13 +163,17 @@ final class LogReader
 		this()
 		{
 			super();
-			p = readDword(), size = readDword();
+			readExtraPointers();
+			p = readDword();
+			size = readDword();
 			if (newClassName)
 			{
 				className = newClassName;
 				newClassName = null;
 			}
 		}
+
+		void readExtraPointers() {} // HACK: remove in next file format
 	}
 
 	class MallocEvent : MemoryAllocationEvent
@@ -180,14 +184,13 @@ final class LogReader
 	{
 	}
 
-	class ReallocEvent : MemoryEvent  // TODO : reorganize
+	class ReallocEvent : MemoryAllocationEvent  // TODO : reorganize
 	{
-		uint p1, p2, size;
+		uint oldp;
 
-		this()
+		override void readExtraPointers()
 		{
-			super();
-			p1 = readDword(), p2 = readDword(), size = readDword();
+			oldp = readDword();
 		}
 	}
 
