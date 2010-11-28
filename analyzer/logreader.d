@@ -111,21 +111,21 @@ final class LogReader
 			}
 	}
 
-	final uint readDword()
+	uint readDword()
 	{
 		uint result;
 		f.read(result);
 		return result;
 	}
 
-	final ubyte[] readData(uint count)
+	ubyte[] readData(uint count)
 	{
 		ubyte[] result = new ubyte[count];
 		f.readExact(result.ptr, result.length);
 		return result;
 	}
 
-	final uint[] readDwords(uint count)
+	uint[] readDwords(uint count)
 	{
 		uint[] result = new uint[count];
 		f.readExact(result.ptr, result.length*4);
@@ -354,7 +354,7 @@ final class LogReader
 		}
 	}
 	
-	class MemoryDumpEvent : MemoryStateEvent
+	final class MemoryDumpEvent : MemoryStateEvent
 	{
 		uint[B_MAX] buckets;
 		
@@ -364,14 +364,14 @@ final class LogReader
 			buckets[] = readDwords(B_MAX);
 		}
 
-		final ubyte[] loadPageData(int poolNr, int pageNr)
+		ubyte[] loadPageData(int poolNr, int pageNr)
 		{
 			Pool* p = &pools[poolNr];
 			f.seekSet(p.dataOffsets[pageNr]);
 			return readData(PAGESIZE);
 		}
 		
-		final ubyte[] loadPoolData(int poolNr)
+		ubyte[] loadPoolData(int poolNr)
 		{
 			Pool* p = &pools[poolNr];
 			ubyte[] result;
@@ -384,13 +384,13 @@ final class LogReader
 			return result;
 		}
 
-		final ubyte[] loadStackData()
+		ubyte[] loadStackData()
 		{
 			f.seekSet(stackOffset);
 			return readData(stackBottom - stackTop);
 		}
 
-		final ubyte[] loadRootData(ref Root root)
+		ubyte[] loadRootData(ref Root root)
 		{
 			if (!root.dataOffset)
 				throw new Exception(format("No data for root area %08X-%08X", root.bottom, root.top));
@@ -398,7 +398,7 @@ final class LogReader
 			return readData(root.top - root.bottom);
 		}
 
-		final uint readDword(uint addr)
+		uint readDword(uint addr)
 		{
 			if (addr >= stackTop && addr < stackBottom)
 			{
@@ -426,7 +426,7 @@ final class LogReader
 		}
 	}
 
-	class MemoryMapEvent : MemoryStateEvent
+	final class MemoryMapEvent : MemoryStateEvent
 	{
 		this()
 		{
@@ -434,7 +434,7 @@ final class LogReader
 		}
 	}
 
-	class TextEvent : MemoryEvent
+	final class TextEvent : MemoryEvent
 	{
 		string text;
 
@@ -445,7 +445,7 @@ final class LogReader
 		}
 	}
 
-	class NewClassEvent : Event
+	final class NewClassEvent : Event
 	{
 		string className;
 		
