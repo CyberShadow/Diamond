@@ -875,7 +875,7 @@ Lbreak:
 						enforce(event !is null, "Invalid event");
 						enforce(n.p == event.p, "Node/Event pointer mismatch");
 						if (n.next) enforce(n.p+event.size <= n.next.p, "Node continuity broken");
-						if (n.prev && (n.prev.p>>16) < (n.p>>16)) lazyEnforce(analysis.map[n.p>>16] is n, format("Node is not mapped (event %d)", n.eventID));
+						if (n.prev && ((n.prev.p+analysis.getNodeSize(n.prev))>>16) < (n.p>>16)) lazyEnforce(analysis.map[n.p>>16] is n, format("Node is not mapped (event %d)", n.eventID));
 					}
 					writefln("%d nodes checked.", count);
 					foreach (seg,n;analysis.map)
