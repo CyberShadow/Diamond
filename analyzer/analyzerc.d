@@ -862,6 +862,70 @@ Lbreak:
 					writefln("%08X - %s", address, mapLookUp(address));
 					break;
 				}
+				// === history editing ===
+				case "swap":
+				{
+					if (args.length!=3)
+						throw new Exception("Specify two events");
+					uint e1 = toInt(args[1]);
+					uint e2 = toInt(args[2]);
+					auto e = log.events[e1]; log.events[e1] = log.events[e2]; log.events[e2] = e;
+					break;
+				}
+				case "fixgcallocs": // fix allocations during GCs in history
+				{
+					/+
+					int d = -1;
+					foreach (i, e; log.events)
+						if (e.type == PACKET_MEMORY_DUMP)
+							if (d != -1)
+								throw new Exception("Double DUMP event");
+							else
+								d = i;
+						else
+						if (e.type == PACKET_MEMORY_MAP)
+							if (d == -1)
+								throw new Exception("MAP event with no DUMP event");
+							else
+							{
+								if (i > d+1)
+								{
+									writefln("%d -> %d", i, d+1);
+									int start = d+1;
+									int end = i;
+									for (int j=end; j>start; j--)
+										log.events[j] = log.events[j-1];
+									log.events[start] = e;
+								}
+								d = -1;
+							}
+					+/
+					int d = -1;
+					for (int i=0; i<log.events.length; i++)
+					{
+						auto e = log.events[i];
+						if (e.type == PACKET_MEMORY_DUMP)
+							if (d != -1)
+								throw new Exception("Double DUMP event");
+							else
+								d = i;
+						else
+						if (e.type == PACKET_MEMORY_MAP)
+							if (d == -1)
+								throw new Exception("MAP event with no DUMP event");
+							else
+							{
+								if (d+1 < i)
+								{
+									writefln("Deleting %d - %d", d+1, i-1);
+									log.events = log.events[0..d+1] ~ log.events[i..$];
+									i = d+1;
+								}
+								d = -1;
+							}
+					}
+					break;
+				}
 				// === diagnostics ===
 				case "integrity": // verify the validity of the analysis state
 				{
