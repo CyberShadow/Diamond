@@ -869,24 +869,24 @@ Lbreak:
 					for (auto n = analysis.first;n;n=n.next)
 					{
 						count++;
-						check(n.prev is null ? n is analysis.first : n is n.prev.next, "Broken chain");
-						check(n.next is null ? n is analysis.last  : n is n.next.prev, "Broken chain");
+						enforce(n.prev is null ? n is analysis.first : n is n.prev.next, "Broken chain");
+						enforce(n.next is null ? n is analysis.last  : n is n.next.prev, "Broken chain");
 						auto event = cast(MemoryAllocationEvent)log.events[n.eventID];
-						check(event !is null, "Invalid event");
-						check(n.p == event.p, "Node/Event pointer mismatch");
-						if (n.next) check(n.p+event.size <= n.next.p, "Node continuity broken");
-						if (n.prev && (n.prev.p>>16) < (n.p>>16)) check(analysis.map[n.p>>16] is n, "Node is not mapped");
+						enforce(event !is null, "Invalid event");
+						enforce(n.p == event.p, "Node/Event pointer mismatch");
+						if (n.next) enforce(n.p+event.size <= n.next.p, "Node continuity broken");
+						if (n.prev && (n.prev.p>>16) < (n.p>>16)) enforce(analysis.map[n.p>>16] is n, "Node is not mapped");
 					}
 					writefln("%d nodes checked.", count);
 					foreach (seg,n;analysis.map)
 						if (n)
 						{
 							if (n.prev)
-								check(n.prev.p>>16 < seg, "Mapped node is not first");
+								enforce(n.prev.p>>16 < seg, "Mapped node is not first");
 							if (n.p>>16 < seg) // stretches across segs
-								check(n.next is null || (n.next.p>>16) >= seg, "Mismapped node");
+								enforce(n.next is null || (n.next.p>>16) >= seg, "Mismapped node");
 							else
-								check(n.p>>16 == seg, "Mismapped node");
+								enforce(n.p>>16 == seg, "Mismapped node");
 						}
 					writefln("Map checked.");
 					break;
@@ -1071,7 +1071,7 @@ else
 }
 
 /// Assert, but not just for debug builds
-void check(bool condition, string message)
+void enforce(bool condition, string message)
 {
 	if (!condition)
 		throw new Exception(message);
