@@ -240,7 +240,7 @@ final:
 		return null;
 	}
 
-	Node* findNodeFuzzy(uint p, bool fuzzy=false)
+	Node* findNodeFuzzy(uint p)
 	{
 		auto sector = p>>16;
 		while (sector && map[sector] is null)
