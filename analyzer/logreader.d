@@ -62,7 +62,7 @@ final class LogReader
 		f = new BufferedFile(fileName);
 		if (f is null)
 			throw new Exception("Can't open file " ~ fileName);
-		long fileSize = f.size;
+		ulong fileSize = f.size;
 
 		auto fileVersion = readDword;
 		if (fileVersion != FORMAT_VERSION)
@@ -367,7 +367,7 @@ final class LogReader
 		ubyte[] loadPageData(int poolNr, int pageNr)
 		{
 			Pool* p = &pools[poolNr];
-			f.seekSet(p.dataOffsets[pageNr]);
+			f.seekSet(cast(long)p.dataOffsets[pageNr]);
 			return readData(PAGESIZE);
 		}
 		
@@ -378,7 +378,7 @@ final class LogReader
 			result.length = p.ncommitted * PAGESIZE;
 			for (int pageNr=0;pageNr<p.ncommitted;pageNr++)
 			{
-				f.seekSet(p.dataOffsets[pageNr]);
+				f.seekSet(cast(long)p.dataOffsets[pageNr]);
 				f.readExact(result.ptr+pageNr*PAGESIZE, PAGESIZE);
 			}
 			return result;
@@ -386,7 +386,7 @@ final class LogReader
 
 		ubyte[] loadStackData()
 		{
-			f.seekSet(stackOffset);
+			f.seekSet(cast(long)stackOffset);
 			return readData(stackBottom - stackTop);
 		}
 
@@ -394,7 +394,7 @@ final class LogReader
 		{
 			if (!root.dataOffset)
 				throw new Exception(format("No data for root area %08X-%08X", root.bottom, root.top));
-			f.seekSet(root.dataOffset);
+			f.seekSet(cast(long)root.dataOffset);
 			return readData(root.top - root.bottom);
 		}
 
@@ -402,21 +402,21 @@ final class LogReader
 		{
 			if (addr >= stackTop && addr < stackBottom)
 			{
-				f.seekSet(stackOffset + addr-stackTop);
+				f.seekSet(cast(long)(stackOffset + addr-stackTop));
 				return this.outer.readDword();
 			}
 			auto pool = findPool(addr);
 			if (pool)
 			{
 				if (addr>=pool.topCommittedAddr) throw new Exception(format("Specified memory address %08X is in a reserved memory region", addr));
-				f.seekSet(pool.dataOffsets[(addr-pool.addr)/PAGESIZE] + (addr-pool.addr)%PAGESIZE);
+				f.seekSet(cast(long)(pool.dataOffsets[(addr-pool.addr)/PAGESIZE] + (addr-pool.addr)%PAGESIZE));
 				return this.outer.readDword();
 			}
 			foreach (ref root; roots)
 				if (addr >= root.bottom && addr < root.top)
 					if (root.dataOffset)
 					{
-						f.seekSet(root.dataOffset + addr-root.bottom);
+						f.seekSet(cast(long)(root.dataOffset + addr-root.bottom));
 						return this.outer.readDword();
 					}
 					else
