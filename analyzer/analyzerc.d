@@ -167,7 +167,7 @@ int main(string[] argv)
 		{
 			writef(" %08X -> %08X - %08X (%d bytes)", oldp, p, p+size, size);
 			if (className)
-				writefln(" %s", className);
+				writef(" %s", className);
 			writefln;
 		}
 		else
@@ -175,7 +175,7 @@ int main(string[] argv)
 		{
 			writef(" %08X - %08X (%d bytes)", p, p+size, size);
 			if (className)
-				writefln(" %s", className);
+				writef(" %s", className);
 			writefln;
 		}
 		else
