@@ -399,7 +399,8 @@ int main(string[] argv)
 					break;
 				}
 				// === navigation ===
-				case "goto": // set cursor at a certain event number
+				case "g": // set cursor at a certain event number
+				case "goto":
 				{
 					if (args.length!=2)
 						throw new Exception("Specify an event number or expression.");
@@ -908,7 +909,7 @@ Lbreak:
 					writefln("maps                               list memory map events");
 					writefln("events <event> [<event2>]          display events in event range");
 					/*highVideo();*/writefln("=== navigation ===");/*normVideo();*/
-					writefln("goto <event>                       set cursor at a certain event number");
+					writefln("g[oto] <event>                     set cursor at a certain event number");
 					writefln("n[ext]                             next event");
 					writefln("p[rev]                             previous event");
 					writefln("nextdump                           next dump event");
