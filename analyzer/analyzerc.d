@@ -884,32 +884,6 @@ Lbreak:
 				}
 				case "fixgcallocs": // fix allocations during GCs in history
 				{
-					/+
-					int d = -1;
-					foreach (i, e; log.events)
-						if (e.type == PACKET_MEMORY_DUMP)
-							if (d != -1)
-								throw new Exception("Double DUMP event");
-							else
-								d = i;
-						else
-						if (e.type == PACKET_MEMORY_MAP)
-							if (d == -1)
-								throw new Exception("MAP event with no DUMP event");
-							else
-							{
-								if (i > d+1)
-								{
-									writefln("%d -> %d", i, d+1);
-									int start = d+1;
-									int end = i;
-									for (int j=end; j>start; j--)
-										log.events[j] = log.events[j-1];
-									log.events[start] = e;
-								}
-								d = -1;
-							}
-					+/
 					int d = -1;
 					for (int i=0; i<log.events.length; i++)
 					{
@@ -927,9 +901,9 @@ Lbreak:
 							{
 								if (d+1 < i)
 								{
-									writefln("Deleting %d - %d", d+1, i-1);
-									log.events = log.events[0..d+1] ~ log.events[i..$];
-									i = d+1;
+									writefln("%d - %d", d+1, i-1);
+									insert(log.events, d+1, e);
+									i++;
 								}
 								d = -1;
 							}
@@ -1156,4 +1130,11 @@ void lazyEnforce(bool condition, lazy string message)
 {
 	if (!condition)
 		throw new Exception(message);
+}
+
+void insert(T)(ref T[] arr, size_t pos, T el)
+{
+	arr ~= T.init;
+	std.c.string.memmove(arr.ptr+pos+1, arr.ptr+pos, T.sizeof * (arr.length - pos));
+	arr[pos] = el;
 }
