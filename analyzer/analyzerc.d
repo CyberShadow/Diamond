@@ -408,6 +408,19 @@ int main(string[] argv)
 						showEvent(i);
 					break;
 				}
+				case "text":
+				{
+					string s = std.string.join(args[1..$], " ");
+					foreach (i,event;log.events)
+						if (event.type == PACKET_TEXT)
+						{
+							auto textEvent = cast(TextEvent)event;
+							if (s.length && textEvent.text.find(s)<0)
+								continue;
+							showEvent(i);
+						}
+					break;
+				}
 				// === navigation ===
 				case "g": // set cursor at a certain event number
 				case "goto":
@@ -956,6 +969,7 @@ Lbreak:
 					writefln("dumps                              list memory dump events");
 					writefln("maps                               list memory map events");
 					writefln("events <event> [<event2>]          display events in event range");
+					writefln("text [<string>]                    display text events containing string");
 					/*highVideo();*/writefln("=== navigation ===");/*normVideo();*/
 					writefln("g[oto] <event>                     set cursor at a certain event number");
 					writefln("n[ext]                             next event");
