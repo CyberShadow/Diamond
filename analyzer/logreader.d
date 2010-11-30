@@ -57,7 +57,7 @@ final class LogReader
 		this.fileName = fileName;
 	}
 	
-	void load(LogProgressDelegate progressDelegate = null)
+	void load(LogProgressDelegate progressDelegate = null, uint limit=uint.max)
 	{
 		f = new BufferedFile(fileName);
 		if (f is null)
@@ -70,45 +70,45 @@ final class LogReader
 		
 		uint n; events.length = 256;
 		scope(exit) events.length = n;
-		while (!f.eof)
+		while (!f.eof && n<limit)
+		{
+			if ((n&0xFF)==0 && progressDelegate)
+				progressDelegate(f.position, fileSize);
+			uint type = readDword;
+			Event event;
+			switch (type)
 			{
-				if ((n&0xFF)==0 && progressDelegate)
-					progressDelegate(f.position, fileSize);
-				uint type = readDword;
-				Event event;
-				switch (type)
-				{
-					case PACKET_MALLOC:
-						event = new MallocEvent; break;
-					case PACKET_CALLOC:
-						event = new CallocEvent; break;
-					case PACKET_REALLOC:
-						event = new ReallocEvent; break;
-					case PACKET_EXTEND:
-						event = new ExtendEvent; break;
-					case PACKET_FREE:
-						event = new FreeEvent; break;
-					case PACKET_MEMORY_DUMP:
-						event = new MemoryDumpEvent; break;
-					case PACKET_MEMORY_MAP:
-						event = new MemoryMapEvent; break;
-					case PACKET_TEXT:
-						event = new TextEvent; break;
-					case PACKET_NEWCLASS:
-						event = new NewClassEvent; break;
-					default:
-						throw new Exception("Unknown packet type");
-				}
-				MemoryEvent memoryEvent = cast(MemoryEvent)event;
-				if (memoryEvent) // store non-metadata events only
-				{
-					memoryEvent.type = type;
-					if (n>=events.length)
-						events.length = events.length*2;
-					events[n] = memoryEvent;
-					n++;
-				}
+				case PACKET_MALLOC:
+					event = new MallocEvent; break;
+				case PACKET_CALLOC:
+					event = new CallocEvent; break;
+				case PACKET_REALLOC:
+					event = new ReallocEvent; break;
+				case PACKET_EXTEND:
+					event = new ExtendEvent; break;
+				case PACKET_FREE:
+					event = new FreeEvent; break;
+				case PACKET_MEMORY_DUMP:
+					event = new MemoryDumpEvent; break;
+				case PACKET_MEMORY_MAP:
+					event = new MemoryMapEvent; break;
+				case PACKET_TEXT:
+					event = new TextEvent; break;
+				case PACKET_NEWCLASS:
+					event = new NewClassEvent; break;
+				default:
+					throw new Exception("Unknown packet type");
 			}
+			MemoryEvent memoryEvent = cast(MemoryEvent)event;
+			if (memoryEvent) // store non-metadata events only
+			{
+				memoryEvent.type = type;
+				if (n>=events.length)
+					events.length = events.length*2;
+				events[n] = memoryEvent;
+				n++;
+			}
+		}
 	}
 
 	uint readDword()

@@ -31,15 +31,25 @@ int main(string[] argv)
 	
 	string fileName;
 	string mapFileName;
-	foreach (arg;argv[1..$])
+	uint limit = uint.max;
+	for (int i=1; i<argv.length; i++)
+	{
+		string arg = argv[i];
+		if (arg=="--limit")
+			limit = toUint(argv[++i]);
+		else
 		if (getExt(arg)=="mem")
 			fileName = arg;
 		else	
 		if (getExt(arg)=="map")
 			mapFileName = arg;
 		else
+		if (getExt(arg))
 			writefln("Don't know what to do with .%s files.", getExt(arg));
-	
+		else
+			writefln("Unknown command-line option: %s", arg);
+	}
+
 	if (fileName is null)
 	{
 		fileName = findMostRecent("*.mem");
@@ -53,7 +63,7 @@ int main(string[] argv)
 	writefln("Loading %s...", fileName);
 	auto log = new LogReader(fileName);
 	try
-		log.load(&progressCallback);
+		log.load(&progressCallback, limit);
 	catch(Exception e)
 		writefln("Error: %s", e.msg);
 	if (log.events.length is 0)
