@@ -809,6 +809,33 @@ Lbreak:
 						writefln("... and %d more from event #%d", count-10, lastEvent);
 					break;
 				}
+				case "trace":
+				{
+					if (analysis.cursor<0)
+						throw new Exception("No data (use 'goto' to seek to an event)");
+					if (args.length==1)
+						throw new Exception("Specify a memory address");
+					uint p = fromHex(args[1]);
+					auto n = analysis.findNode(p);
+					if (n is null) throw new Exception("Address out of range or points to unallocated region");
+
+					auto event = cast(MemoryStateEvent)log.events[analysis.cursor];
+					if (event is null) throw new Exception("This is not a memory dump/map event.");
+					auto dataEvent = cast(MemoryDumpEvent)log.events[analysis.cursor];
+					if (dataEvent is null && analysis.cursor>0) dataEvent = cast(MemoryDumpEvent)log.events[analysis.cursor-1];
+					if (dataEvent is null) throw new Exception("This is not a memory dump event, or not directly following one.");
+
+					n = analysis.trace(n, event, dataEvent);
+					while (n)
+					{
+						if (n.p && n.eventID)
+							showEvent(n.eventID);
+						if (n.trace.next)
+							writefln("\t%08X -> %08X", n.trace.from, n.trace.to);
+						n = n.trace.next;
+					}
+					break;
+				}
 				case "dump": // dump memory
 				{
 					if (analysis.cursor<0)

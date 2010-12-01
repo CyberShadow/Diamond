@@ -270,6 +270,114 @@ final:
 		first = last = null;
 		cursor = -1;
 	}
+
+	Node* trace(Node* target, MemoryStateEvent event, MemoryDumpEvent dataEvent)
+	{
+		for (auto n=first; n; n=n.next)
+			n.trace.state = TraceState.WHITE;
+		target.trace.state = TraceState.GRAY;
+
+		bool changed = true;
+		while (changed)
+		{
+			// check roots
+			struct Range
+			{
+				Node* n;
+				uint min, max;
+			}
+			Range[] ranges;
+			for (auto n=first; n; n=n.next)
+				if (n.trace.state == TraceState.GRAY)
+				{
+					ranges ~= Range(n, n.p, n.p+getNodeSize(n));
+					n.trace.state = TraceState.BLACK;
+				}
+
+			Node* checkRange(uint v)
+			{
+				foreach (ref r; ranges)
+					if (r.min <= v && v < r.max)
+						return r.n;
+				return null;
+			}
+
+			Node* makeRoot(uint a, uint v, Node* n)
+			{
+				auto r = new Node;
+				r.trace = TraceInfo(a, v, n);
+				return r;
+			}
+
+			Node* next;
+
+			{
+				uint[] data = cast(uint[])dataEvent.loadStackData();
+				scope(success) delete data;
+				foreach (i,v;data)
+					if ((next=checkRange(v))!is null)
+						return makeRoot(dataEvent.stackTop + i*uint.sizeof, v, next);
+			}
+
+			foreach (rootIndex, ref root; dataEvent.roots)
+				if (root.top - root.bottom != 0)
+				{
+					uint[] data = cast(uint[])dataEvent.loadRootData(root);
+					scope(success) delete data;
+					foreach (i,v;data)
+						if ((next=checkRange(v))!is null)
+							return makeRoot(root.bottom + i*uint.sizeof, v, next);
+					delete data;
+				}
+
+			// expand search
+			changed = false;
+			foreach (int poolNr,ref pool;event.pools)
+				for (int pageNr=0;pageNr<pool.ncommitted;pageNr++)
+				{
+					uint[] data = cast(uint[])dataEvent.loadPageData(poolNr, pageNr);
+					scope(success) delete data;
+					foreach (i,v;data)
+						if ((next=checkRange(v))!is null)
+						{
+							uint address = pool.addr + pageNr*PAGESIZE + i*uint.sizeof;
+							auto bin = pool.pagetable[pageNr];
+							if (bin >= B_FREE)
+								continue;
+							uint biti;
+							if (bin == B_PAGEPLUS)
+							{
+								int p = pageNr;
+								while (pool.pagetable[p]==B_PAGEPLUS)
+									p--;
+								biti = p*PAGESIZE/16;
+							}
+							else
+							{
+								uint startAddr = address & ~(pageSizes[bin]-1);
+								biti = (startAddr-pool.addr)/16;
+							}
+							//writefln("address=%08X, page=%s, startAddr => %08X", address, pageNames[bin], startAddr);
+							if (bin < B_PAGE && Pool.readBit(pool.freebits, biti))
+								continue;
+							if (Pool.readBit(pool.noscan, biti))
+								continue;
+
+							Node* n = findNode(address);
+							if (n is null)
+								throw new Exception(format("Reference from unmapped address %08X", address));
+							if (n.trace.state != TraceState.WHITE)
+								continue;
+							n.trace.state = TraceState.GRAY;
+							n.trace.from = address;
+							n.trace.to = v;
+							n.trace.next = next;
+							changed = true;
+						}
+				}
+		}
+		return null;
+	}
 }
 
 struct Node
@@ -277,4 +385,19 @@ struct Node
 	Node* next, prev;
 	uint eventID;
 	uint p;
+	TraceInfo trace;
+}
+
+private enum TraceState
+{
+	WHITE,
+	GRAY,
+	BLACK,
+}
+
+private struct TraceInfo
+{
+	uint from, to;
+	Node* next;
+	TraceState state;
 }
