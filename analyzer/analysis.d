@@ -102,7 +102,7 @@ final:
 								if (n.p < pool.addr) throw new Exception("Node isn't in any pools");
 								auto oldEvent = cast(MemoryAllocationEvent)log.events[n.eventID];
 								assert(n.p == oldEvent.p);
-								if (n.p+oldEvent.size > pool.topAddr) throw new Exception(format("Node doesn't fit in the pool (node: %08X -> %08X, pool: %08X -> %08X", n.p, n.p+oldEvent.size, pool.addr, pool.topAddr));
+								if (n.p+oldEvent.size > pool.topAddr) throw new Exception(format("Node doesn't fit in the pool (node: %08X -> %08X, pool: %08X -> %08X)", n.p, n.p+oldEvent.size, pool.addr, pool.topAddr));
 								if (n.p & 0xF) throw new Exception("Node is not aligned to paragraph boundary");
 								bool doFree;
 								if (oldEvent.size <= PAGESIZE/2) // B_2048
