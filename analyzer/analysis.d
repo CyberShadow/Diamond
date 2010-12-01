@@ -79,10 +79,17 @@ final:
 					}
 					case PACKET_MEMORY_MAP:
 					{
-						if (cursor==0 || log.events[cursor-1].type != PACKET_MEMORY_DUMP)
-							continue; // not a post-garbage-collection dump
 						auto event = cast(MemoryStateEvent)log.events[cursor];
-						auto prevEvent = cast(MemoryStateEvent)log.events[cursor-1];
+
+						MemoryStateEvent prevEvent = null;
+						foreach_reverse(e; log.events[0..cursor])
+							if (e.type == PACKET_MEMORY_DUMP)
+							{
+								prevEvent = cast(MemoryStateEvent)e;
+								break;
+							}
+						if (prevEvent is null) throw new Exception("No corresponding dump event for map event");
+
 						int poolNr = 0;
 						Pool* pool = &event.pools[poolNr];
 						Node*[] freeNodes;
