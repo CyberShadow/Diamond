@@ -1021,6 +1021,7 @@ Lbreak:
 					writefln("roots [<event>]                    display root ranges");
 					writefln("refs <address> [<address2>]        search for all references to address/range");
 					writefln("allrefs <address> [<address2>]     same, but also search unallocated memory");
+					writefln("trace <address>                    trace heap references from root to address");
 					writefln("dump <address> [<address2>]        dump memory at address/range");
 					/*highVideo();*/writefln("=== symbols ===");/*normVideo();*/
 					writefln("symbol <symbol>                    show symbols matching name");
