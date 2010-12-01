@@ -831,7 +831,12 @@ Lbreak:
 						if (n.p && n.eventID)
 							showEvent(n.eventID);
 						if (n.trace.next)
-							writefln("\t%08X -> %08X", n.trace.from, n.trace.to);
+						{
+							if (n.p)
+								writefln("\t%08X (+%4X) -> %08X (+%4X)" , n.trace.from, n.trace.from-n.p, n.trace.to, n.trace.to-n.trace.next.p);
+							else
+								writefln("\t%08X         -> %08X (+%4X)", n.trace.from,                   n.trace.to, n.trace.to-n.trace.next.p);
+						}
 						n = n.trace.next;
 					}
 					break;
