@@ -196,7 +196,7 @@ int main(string[] argv)
 			writefln(" (%6d/%6d/%6d)", allocated, committed, total);
 		else
 		if (cast(TextEvent)event) with (cast(TextEvent)event)
-			writefln(" - \"%s\"", strip(text));
+			writefln(" %s", strip(text));
 		else
 			writefln();
 	}
