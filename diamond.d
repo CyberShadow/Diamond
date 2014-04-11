@@ -396,6 +396,7 @@ version(MEMLOG)
 				logDword(bottom);
 				logDword(top);
 				if (dataDump)
+                {
 					if (gcx.findPool(bottom)) // in heap?
 						logDword(0);
 					else
@@ -403,6 +404,7 @@ version(MEMLOG)
 						logDword(1);
 						logData(bottom[0..cast(ubyte*)top-cast(ubyte*)bottom]);
 					}
+                }
 			}
 			logDword(gcx.nranges+1);
 			logRoots(gcx.roots, gcx.roots + gcx.nroots);
