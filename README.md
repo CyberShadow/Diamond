@@ -19,7 +19,7 @@ The project is not yet complete, but still usable. The log file format may chang
  * has optional memory debugging features, like checking free calls and stomping on deallocated memory
 
 ### Log analyzer features
- 
+
  * uses map files to display symbols in call stacks
  * can seek through the log file, allowing to examine the application state at different points in time
  * can display "top allocators" - call stacks that allocated most bytes
@@ -29,13 +29,13 @@ The project is not yet complete, but still usable. The log file format may chang
  * can dump a region of memory to screen
 
 ### Limitations
- 
+
  * limited support for multi-threaded programs
  * limited by design to 32-bit architectures
  * poor support for allocations in destructors
 
 ### Future plans
- 
+
  * better documentation
  * more type information (by hooking higher-level allocators)
  * more runtime library options
@@ -46,13 +46,14 @@ The project is not yet complete, but still usable. The log file format may chang
 
 How to use
 ==========
- 
+
  1. Copy `diamond.d` to your project's directory
  2. Adjust options defined at the top of `diamond.d`
  3. Add `import diamond;` before other imports in your project's main module
  4. If you enabled memory event logs, enable map file generation in your linker options.
- 5. Rebuild and run your project as usual.
- 6. If you enabled memory event logs, run the memory analyzer when the program terminates.
+ 5. To build you will need to pass an import path to Druntime's `src` directory (e.g. -IC:\D\dmd2\src\druntime), since `diamond.d` requires the modules in the `gc` directory.
+ 6. Rebuild and run your project as usual.
+ 7. If you enabled memory event logs, run the memory analyzer when the program terminates.
 
 For correct stack traces, you'll need to rebuild Phobos with symbols (add `-g` and remove `-O` from the `DFLAGS` option in the makefiles).
 
