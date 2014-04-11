@@ -4,7 +4,7 @@ module diamond;
 version = MEMSTOMP;  // stomp on memory when it's freed
 version = FREECHECK; // checks manual delete operations
 
-version = MEMLOG;    // log memory operations and content 
+version = MEMLOG;    // log memory operations and content
 //version = MEMLOG_VERBOSE; // save memory dumps before and after memory operations
 //const MEMLOG_VERBOSE_STEP = 1; // do a full memory dump every ... allocations
 version = MEMLOG_CRC32; // incremental memory dumps using CRC sums to skip logging memory pages that haven't changed between memory dumps
@@ -115,7 +115,7 @@ version(MEMLOG)
 {
 	FILE* log;
 
-	void logDword(uint  i) { fwrite(&i, 4, 1, log); }		
+	void logDword(uint  i) { fwrite(&i, 4, 1, log); }
 	void logDword(void* i) { fwrite(&i, 4, 1, log); }
 	void logData(void[] d) { fwrite(d.ptr, d.length, 1, log); }
 	void logBits(ref GCBits bits) { logDword(bits.nwords); if (bits.nbits) logData(bits.data[1..1+bits.nwords]); }
@@ -132,7 +132,7 @@ version(MEMLOG)
 		}
 		logDword(null);
 	}
-	
+
 	enum : int
 	{
 		PACKET_MALLOC,
@@ -155,13 +155,13 @@ version(Windows)
 {
 	bool makeWritable(void* address, size_t size)
 	{
-		uint old; 
+		uint old;
 		return VirtualProtect(address, size, PAGE_EXECUTE_WRITECOPY, &old) != 0;
 	}
 }
 else
-{   
-	extern (C) int sysconf(int);	
+{
+	extern (C) int sysconf(int);
 	bool makeWritable(void* address, size_t size)
 	{
 		uint pageSize = sysconf(_SC_PAGE_SIZE);
@@ -215,7 +215,7 @@ struct CFunctionHook(int uniqueID, ReturnType, Args ...)
 MethodHook!(1, size_t, Gcx*, void*) fullcollectHook;
 version(MEMSTOMP)
 {
-	CFunctionHook!(2, byte[], TypeInfo, size_t, Array*) arraysetlengthTHook;	
+	CFunctionHook!(2, byte[], TypeInfo, size_t, Array*) arraysetlengthTHook;
 	CFunctionHook!(3, byte[], TypeInfo, size_t, Array*) arraysetlengthiTHook;
 }
 version(MEMLOG)
@@ -237,7 +237,7 @@ void enforce(bool condition, char[] message)
 final class DiamondGC : GC
 {
 	// note: we can't add fields here because we are overwriting the original class's virtual call table
-	
+
 	final void mallocHandler(size_t size, void* p)
 	{
 		//printf("Allocated %d bytes at %08X\n", size, p); printStackTrace();
@@ -248,7 +248,7 @@ final class DiamondGC : GC
 				logDword(time(null));
 				logStackTrace();
 				logDword(p);
-				logDword(size);			
+				logDword(size);
 			}
 		version(MEMLOG_VERBOSE) verboseLog();
 	}
@@ -262,8 +262,8 @@ final class DiamondGC : GC
 				logDword(PACKET_CALLOC);
 				logDword(time(null));
 				logStackTrace();
-				logDword(p);			
-				logDword(size);			
+				logDword(p);
+				logDword(size);
 			}
 		version(MEMLOG_VERBOSE) verboseLog();
 	}
@@ -279,14 +279,14 @@ final class DiamondGC : GC
 				logStackTrace();
 				logDword(p1);
 				logDword(p2);
-				logDword(size);			
+				logDword(size);
 			}
 		version(MEMLOG_VERBOSE) verboseLog();
 	}
 
-	override size_t extend(void* p, size_t minsize, size_t maxsize) 
+	override size_t extend(void* p, size_t minsize, size_t maxsize)
 	{
-		auto result = super.extend(p, minsize, maxsize); 
+		auto result = super.extend(p, minsize, maxsize);
 		version(MEMLOG) synchronized(logsync)
 			if (result)
 			{
@@ -300,8 +300,8 @@ final class DiamondGC : GC
 		return result;
 	}
 
-	override void free(void *p) 
-	{ 
+	override void free(void *p)
+	{
 		version(FREECHECK)
 		{
 			Pool* pool = gcx.findPool(p);
@@ -310,7 +310,7 @@ final class DiamondGC : GC
 			uint pagenum = (p - pool.baseAddr) / PAGESIZE;
 			Bins bin = cast(Bins)pool.pagetable[pagenum];
 			enforce(bin <= B_PAGE, "Freed item is not in an allocated page");
-			
+
 			size_t size = binsize[bin];
 			enforce((cast(size_t)p & (size - 1)) == 0, "Freed item is not aligned to bin boundary");
 
@@ -334,7 +334,7 @@ final class DiamondGC : GC
 				(cast(ubyte*)p)[4..c] = 0xBD;
 		}
 		else
-			super.free(p); 
+			super.free(p);
 		version(MEMLOG_VERBOSE) verboseLog();
 	}
 
@@ -381,7 +381,7 @@ version(MEMLOG)
 			logDword(dataDump ? PACKET_MEMORY_DUMP : PACKET_MEMORY_MAP);
 			logDword(time(null));
 			logStackTrace();
-			
+
 			// log stack
 			void* stackTop = esp();
 			void* stackBottom = gcx.stackBottom;
@@ -408,7 +408,7 @@ version(MEMLOG)
 			logRoots(gcx.roots, gcx.roots + gcx.nroots);
 			foreach (ref range; gcx.ranges[0..gcx.nranges])
 				logRoots(range.pbot, range.ptop);
-			
+
 			logDword(gcx.npools);
 			for (int pn=0;pn<gcx.npools;pn++)
 			{
@@ -488,8 +488,8 @@ version(MEMLOG)
 
 size_t fullcollectHandler(void* stackTop, Gcx* gcx)
 {
-	//printf("minaddr=%08X maxaddr=%08X\n", gcx.minAddr, gcx.maxAddr);	
-	//printf("Beginning garbage collection\n");	
+	//printf("minaddr=%08X maxaddr=%08X\n", gcx.minAddr, gcx.maxAddr);
+	//printf("Beginning garbage collection\n");
 	version(MEMLOG) logMemoryDump(true, gcx);
 	fullcollectHook.unhook();
 	auto result = gcx.fullcollect(stackTop);
@@ -502,7 +502,7 @@ size_t fullcollectHandler(void* stackTop, Gcx* gcx)
 version(MEMSTOMP)
 {
 	// stomp on shrunk arrays
-	 
+
 	extern(C) extern byte[] _d_arraysetlengthT(TypeInfo ti, size_t newlength, Array *p);
 	extern(C) extern byte[] _d_arraysetlengthiT(TypeInfo ti, size_t newlength, Array *p);
 
@@ -551,7 +551,7 @@ version(MEMLOG)
 		newclassHook.hook();
 		return result;
 	}
-	
+
 }
 
 // ****************************************************************************
@@ -582,7 +582,7 @@ static this()
 
 static ~this()
 {
-	version(MEMLOG) 
+	version(MEMLOG)
 	{
 		//printf("Closing memory log...\n");
 		fclose(log);
