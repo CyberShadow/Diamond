@@ -1,6 +1,7 @@
 module logreader;
 
-import std.c.time;
+import core.stdc.time;
+
 import std.string;
 import std.stream;
 
@@ -414,6 +415,7 @@ final class LogReader
 			}
 			foreach (ref root; roots)
 				if (addr >= root.bottom && addr < root.top)
+				{
 					if (root.dataOffset)
 					{
 						f.seekSet(cast(long)(root.dataOffset + addr-root.bottom));
@@ -421,6 +423,7 @@ final class LogReader
 					}
 					else
 						throw new Exception(format("Specified memory address %08X is in a root zone outside the heap, however there is no data for this root area.", addr));
+				}
 
 			throw new Exception(format("Specified memory address %08X is at an unknown location", addr));
 		}

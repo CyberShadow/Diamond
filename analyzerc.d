@@ -11,7 +11,7 @@ import std.path;
 
 alias d_time = SysTime;
 
-import std.c.time;
+import core.stdc.time;
 import logreader;
 import mapfile;
 import analysis;
@@ -108,10 +108,12 @@ int main(string[] argv)
 		int padd = countUntil(s, '-');
 		int psub = countUntil(s, '+');
 		if (psub>0 || padd>0) // support simple arithmetics
+		{
 			if (psub<=0 || padd>psub)
 				return parsePositionSubexpression(s[0..padd-1]) + parsePositionSubexpression(s[padd+1..$]);
 			else
 				return parsePositionSubexpression(s[0..psub-1]) - parsePositionSubexpression(s[psub+1..$]);
+		}
 		if (s=="@" || s=="cursor")
 			return analysis.cursor;
 		else
@@ -372,7 +374,7 @@ int main(string[] argv)
 					{
 						uint[] stack;
 
-						int opCmp(Sorter* s)
+						int opCmp(ref const Sorter s)
 						{
 							ulong my = stacks[stack];
 							ulong that = stacks[s.stack];
@@ -380,7 +382,7 @@ int main(string[] argv)
 						}
 					}
 					Sorter[] sortedStacks = cast(Sorter[])stacks.keys;
-					sortedStacks.sort;
+					sortedStacks.sort();
 					int n = 5;
 					if (args.length>1)
 						n = toInt(args[1]);
@@ -586,6 +588,7 @@ Lbreak:
 							{
 								auto addr = pool.addr + pageNr*PAGESIZE;
 								if (pageNr%16==0)
+								{
 									if (pageNr/16%columns==0)
 									{
 										writeln;
@@ -593,6 +596,7 @@ Lbreak:
 									}
 									else
 										write(' ');
+								}
 								bool hasScan, hasNoScan;
 								// does this page have pointers?
 								if (bin<=B_PAGEPLUS)
@@ -673,6 +677,7 @@ Lbreak:
 						uint biti = (PAGESIZE/16)*pageNr + i*step;
 						auto addr = pool.addr + pageNr*PAGESIZE + i*binsize;
 						if (i%16==0)
+						{
 							if (i/16%columns==0)
 							{
 								writeln;
@@ -680,6 +685,7 @@ Lbreak:
 							}
 							else
 								write(' ');
+						}
 						bool free   = Pool.readBit(pool.freebits, biti);
 						bool noscan = Pool.readBit(pool.noscan  , biti);
 						bool finals = Pool.readBit(pool.finals  , biti);
@@ -949,6 +955,7 @@ Lbreak:
 								d = i;
 						else
 						if (e.type == PACKET_MEMORY_MAP)
+						{
 							if (d == -1)
 								throw new Exception("MAP event with no DUMP event");
 							else
@@ -961,6 +968,7 @@ Lbreak:
 								}
 								d = -1;
 							}
+						}
 					}
 					break;
 				}
@@ -1093,7 +1101,7 @@ string findMostRecent(string pattern)
 
 version(Windows) // use Windows API to set the colour
 {
-	import std.c.windows.windows;
+	import core.sys.windows.windows;
 	extern(Windows) extern HANDLE GetStdHandle(int);
 
 	/// Emphasized text
@@ -1191,6 +1199,6 @@ void lazyEnforce(bool condition, lazy string message)
 void insert(T)(ref T[] arr, size_t pos, T el)
 {
 	arr ~= T.init;
-	std.c.string.memmove(arr.ptr+pos+1, arr.ptr+pos, T.sizeof * (arr.length - pos));
+	core.stdc.string.memmove(arr.ptr+pos+1, arr.ptr+pos, T.sizeof * (arr.length - pos));
 	arr[pos] = el;
 }

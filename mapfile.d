@@ -1,9 +1,10 @@
 module mapfile;
 
+import core.stdc.stdio;
+
 import std.algorithm;
 import std.file;
 import std.string;
-import std.c.stdio;
 import std.demangle;
 
 struct Symbol
@@ -11,7 +12,7 @@ struct Symbol
 	uint address;
 	string name;
 
-	int opCmp(Symbol* s)
+	int opCmp(ref const Symbol s)
 	{
 		return address==s.address?0:address<s.address?-1:1;
 	}
@@ -73,7 +74,7 @@ final class MapFile
 				symbols ~= s;
 			}
 		}
-		symbols.sort;
+		symbols.sort();
 	}
 
     final string lookup(uint address)

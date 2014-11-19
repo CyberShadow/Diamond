@@ -221,10 +221,12 @@ final:
 		{
 			auto n = map[p>>16];
 			if (n !is null && n.p == op)
+			{
 				if (n.next !is null && (n.next.p>>16) == (p>>16))
 					map[p>>16] = n.next;
 				else
 					map[p>>16] = null;
+			}
 		}
 		//debug foreach (seg,n;map)
 		//	if (n && n.p == op) throw new Exception(format("Unmap failed: unmapped %08X - %08X but it's still mapped at %08X", op, op+size, seg*0x10000));
