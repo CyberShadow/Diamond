@@ -28,9 +28,9 @@ char  [B_MAX] pageChars = "45678901P+.x";
 
 int main(string[] argv)
 {
-	writefln("Diamond Memory Log Analyzer");
-	writefln("Written by Vladimir Panteleev");
-	writefln("https://github.com/CyberShadow/Diamond");
+	writeln("Diamond Memory Log Analyzer");
+	writeln("Written by Vladimir Panteleev");
+	writeln("https://github.com/CyberShadow/Diamond");
 	writeln();
 
 	void progressCallback(ulong pos, ulong max)
@@ -65,10 +65,10 @@ int main(string[] argv)
 		fileName = findMostRecent("*.mem");
 		if (fileName is null)
 		{
-			writefln("There are no .mem files in the current directory. Specify a memory log file on the command line, or run without parameters to use the most recent file in the current directory.");
+			writeln("There are no .mem files in the current directory. Specify a memory log file on the command line, or run without parameters to use the most recent file in the current directory.");
 			return 1;
 		}
-		writefln("Using the most recent memory dump file.");
+		writeln("Using the most recent memory dump file.");
 	}
 	writefln("Loading %s...", fileName);
 	auto log = new LogReader(fileName);
@@ -84,9 +84,9 @@ int main(string[] argv)
 	{
 		mapFileName = findMostRecent("*.map");
 		if (mapFileName is null)
-			writefln("There are no .map files in the current directory and you have not specified one on the command line. Symbols will not be available.");
+			writeln("There are no .map files in the current directory and you have not specified one on the command line. Symbols will not be available.");
 		else
-			writefln("Using the most recent map file.");
+			writeln("Using the most recent map file.");
 	}
 	MapFile map;
 	if (mapFileName)
@@ -500,7 +500,7 @@ Lbreak:
 					for (; n && n.p <= max; n=n.next)
 						showEvent(n.eventID), count++;
 					if (count==0)
-						writefln("No events at address/range.");
+						writeln("No events at address/range.");
 					break;
 				}
 				case "alleventsat": // display all events affecting an address/range
@@ -999,7 +999,7 @@ Lbreak:
 							else
 								enforce(n.p>>16 == seg, "Mismapped node");
 						}
-					writefln("Map checked.");
+					writeln("Map checked.");
 					break;
 				}
 				case "freecheck": // enable/disable free list checking
@@ -1009,56 +1009,56 @@ Lbreak:
 				// other
 				case "help":
 				case "?":
-					writefln("Command list. Event numbers are always in decimal, addresses are in hex.");
-					writefln("Use ^ in event numbers for start, @ for cursor position, $ for end of file.");
-					writefln("Please consult the documentation for details on specific commands.");
-					/*highVideo();*/writefln("=== general statistics ===");/*normVideo();*/
-					writefln("stats                              display event counts");
-					writefln("allocstats                         display top allocator call stacks");
-					/*highVideo();*/writefln("=== timeline information ===");/*normVideo();*/
-					writefln("dumps                              list memory dump events");
-					writefln("maps                               list memory map events");
-					writefln("events <event> [<event2>]          display events in event range");
-					writefln("text [<string>]                    display text events containing string");
-					/*highVideo();*/writefln("=== navigation ===");/*normVideo();*/
-					writefln("g[oto] <event>                     set cursor at a certain event number");
-					writefln("n[ext]                             next event");
-					writefln("p[rev]                             previous event");
-					writefln("nextdump                           next dump event");
-					writefln("nextmap                            next map event");
-					writefln("prevdump                           previous dump event");
-					writefln("prevmap                            previous map event");
-					writefln("lastdump                           last dump event");
-					writefln("lastmap                            last map event");
-					/*highVideo();*/writefln("=== address search and cross-references ===");/*normVideo();*/
-					writefln("eventat <address> [<address2>]     show last event affecting an address/range");
-					writefln("alleventsat <address> [<address2>] show all events affecting an address/range");
-					/*highVideo();*/writefln("=== inspection of specific event ===");/*normVideo();*/
-					writefln("stack [<event>]                    show stack of current/specified event");
-					/*highVideo();*/writefln("=== inspection of map/dump events ===");/*normVideo();*/
-					writefln("info <address>                     show information about a specified address");
-					writefln("pools [<event>]                    display memory pools");
-					writefln("map [<address>|* [<event>]]        display a memory map");
-					writefln("binmap <address> [<event>]         display a map of the specified memory page");
-					writefln("stackinfo [<event>]                display stack information");
-					writefln("roots [<event>]                    display root ranges");
-					writefln("refs <address> [<address2>]        search for all references to address/range");
-					writefln("allrefs <address> [<address2>]     same, but also search unallocated memory");
-					writefln("trace <address>                    trace heap references from root to address");
-					writefln("dump <address> [<address2>]        dump memory at address/range");
-					/*highVideo();*/writefln("=== symbols ===");/*normVideo();*/
-					writefln("symbol <symbol>                    show symbols matching name");
-					writefln("symbolat <address>                 look up symbol by offset");
-					/*highVideo();*/writefln("=== diagnostics ===");/*normVideo();*/
-					writefln("integrity                          verify the validity of the analysis state");
-					writefln("freecheck                          enable/disable free list checking");
+					writeln("Command list. Event numbers are always in decimal, addresses are in hex.");
+					writeln("Use ^ in event numbers for start, @ for cursor position, $ for end of file.");
+					writeln("Please consult the documentation for details on specific commands.");
+					/*highVideo();*/writeln("=== general statistics ===");/*normVideo();*/
+					writeln("stats                              display event counts");
+					writeln("allocstats                         display top allocator call stacks");
+					/*highVideo();*/writeln("=== timeline information ===");/*normVideo();*/
+					writeln("dumps                              list memory dump events");
+					writeln("maps                               list memory map events");
+					writeln("events <event> [<event2>]          display events in event range");
+					writeln("text [<string>]                    display text events containing string");
+					/*highVideo();*/writeln("=== navigation ===");/*normVideo();*/
+					writeln("g[oto] <event>                     set cursor at a certain event number");
+					writeln("n[ext]                             next event");
+					writeln("p[rev]                             previous event");
+					writeln("nextdump                           next dump event");
+					writeln("nextmap                            next map event");
+					writeln("prevdump                           previous dump event");
+					writeln("prevmap                            previous map event");
+					writeln("lastdump                           last dump event");
+					writeln("lastmap                            last map event");
+					/*highVideo();*/writeln("=== address search and cross-references ===");/*normVideo();*/
+					writeln("eventat <address> [<address2>]     show last event affecting an address/range");
+					writeln("alleventsat <address> [<address2>] show all events affecting an address/range");
+					/*highVideo();*/writeln("=== inspection of specific event ===");/*normVideo();*/
+					writeln("stack [<event>]                    show stack of current/specified event");
+					/*highVideo();*/writeln("=== inspection of map/dump events ===");/*normVideo();*/
+					writeln("info <address>                     show information about a specified address");
+					writeln("pools [<event>]                    display memory pools");
+					writeln("map [<address>|* [<event>]]        display a memory map");
+					writeln("binmap <address> [<event>]         display a map of the specified memory page");
+					writeln("stackinfo [<event>]                display stack information");
+					writeln("roots [<event>]                    display root ranges");
+					writeln("refs <address> [<address2>]        search for all references to address/range");
+					writeln("allrefs <address> [<address2>]     same, but also search unallocated memory");
+					writeln("trace <address>                    trace heap references from root to address");
+					writeln("dump <address> [<address2>]        dump memory at address/range");
+					/*highVideo();*/writeln("=== symbols ===");/*normVideo();*/
+					writeln("symbol <symbol>                    show symbols matching name");
+					writeln("symbolat <address>                 look up symbol by offset");
+					/*highVideo();*/writeln("=== diagnostics ===");/*normVideo();*/
+					writeln("integrity                          verify the validity of the analysis state");
+					writeln("freecheck                          enable/disable free list checking");
 					break;
 				case "exit":
 				case "quit":
 				case "q":
 					return 0;
 				default:
-					writefln("Unknown command.");
+					writeln("Unknown command.");
 					break;
 			}
 		catch(Exception e)
