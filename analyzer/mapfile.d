@@ -1,5 +1,6 @@
 module mapfile;
 
+import std.algorithm;
 import std.file;
 import std.string;
 import std.c.stdio;
@@ -10,22 +11,26 @@ struct Symbol
 	uint address;
 	string name;
 
-	int opCmp(Symbol* s) 
+	int opCmp(Symbol* s)
 	{
 		return address==s.address?0:address<s.address?-1:1;
 	}
 
 	string prettyName()
 	{
-		string result;
 		try
-			result = demangle(name);
-		catch(Object o)
-			result = name;
-		foreach (ref c;result)
-			if (c>=0x80)
-				c = '?';
-		return result;
+        {
+			auto result = demangle(name).dup;
+            foreach (ref c; result)
+            if (c>=0x80)
+                c = '?';
+
+            return result.idup;
+        }
+		catch(Exception ex)
+        {
+			return name;
+        }
 	}
 }
 
@@ -33,7 +38,7 @@ final class MapFile
 {
 	this(string fileName)
 	{
-		auto lines = splitlines(cast(string)read(fileName));
+		auto lines = splitLines(cast(string)read(fileName));
 		bool parsing = false;
 		foreach (line;lines)
 		{
@@ -45,15 +50,15 @@ final class MapFile
 					// 0002:00078A44       _D5win327objbase11IsEqualGUIDFS5win328basetyps4GUIDS5win328basetyps4GUIDZi 0047CA44
 					Symbol s;
 					auto line2 = line[21..$];
-					s.name = line2[0..find(line2, ' ')];
+					s.name = line2[0..countUntil(line2, ' ')];
 					sscanf(toStringz(line2[$-8..$]), "%x", &s.address);
 					symbols ~= s;
 				}
 			}
 			else
-				if (find(line, "Publics by Value")>0)
+				if (countUntil(line, "Publics by Value")>0)
 					parsing = true;
-				
+
 			// LD format
 			auto stripped = line.strip();
 			//                 0x00000000080eaa10                _D20TypeInfo_E2WA6Nation6__initZ
@@ -71,8 +76,7 @@ final class MapFile
 		symbols.sort;
 	}
 
-final:
-	string lookup(uint address)
+    final string lookup(uint address)
 	{
 		uint min=0, max=symbols.length-1;
 		while (min<=max)

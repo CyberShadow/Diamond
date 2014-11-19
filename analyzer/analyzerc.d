@@ -1,15 +1,24 @@
 module analyzerc;
 
+import std.algorithm;
+import std.conv;
+import std.datetime;
 import std.stdio;
 import std.string;
 import std.conv;
 import std.file;
 import std.path;
-import std.date : d_time;
+
+alias d_time = SysTime;
+
 import std.c.time;
 import logreader;
 import mapfile;
 import analysis;
+
+alias toInt = to!int;
+alias toUint = to!uint;
+alias getExt = extension;
 
 string[PACKET_MAX] eventNames = ["PACKET_MALLOC", "PACKET_CALLOC", "PACKET_REALLOC", "PACKET_EXTEND", "PACKET_FREE", "PACKET_MEMORY_DUMP", "PACKET_MEMORY_MAP", "PACKET_TEXT", "PACKET_NEWCLASS"];
 string[PACKET_MAX] shortEventNames = ["MALLOC", "CALLOC", "REALLOC", "EXTEND", "FREE", "MEMDUMP", "MEMMAP", "TEXT", "NCLASS"];
@@ -21,14 +30,14 @@ int main(string[] argv)
 {
 	writefln("Diamond Memory Log Analyzer, v0.2");
 	writefln("by Vladimir \"CyberShadow\" Panteleev, 2008-2010");
-	writefln();
-	
+	writeln();
+
 	void progressCallback(ulong pos, ulong max)
 	{
 		writef("%d%%\r", pos*100/max);
-		fflush(stdout);
+		fflush(stdout.getFP());
 	}
-	
+
 	string fileName;
 	string mapFileName;
 	uint limit = uint.max;
@@ -40,7 +49,7 @@ int main(string[] argv)
 		else
 		if (getExt(arg)=="mem")
 			fileName = arg;
-		else	
+		else
 		if (getExt(arg)=="map")
 			mapFileName = arg;
 		else
@@ -69,7 +78,7 @@ int main(string[] argv)
 	if (log.events.length is 0)
 		return 1;
 	writefln("%d events loaded.", log.events.length);
-	
+
 	if (mapFileName is null)
 	{
 		mapFileName = findMostRecent("*.map");
@@ -88,7 +97,7 @@ int main(string[] argv)
 	auto analysis = new Analysis(log);
 
 	// a few utility functions...
-	
+
 	int parsePositionSubexpression(string s)
 	{
 		if (s.length==0)
@@ -96,8 +105,8 @@ int main(string[] argv)
 		if (s[0]=='-' || s[0]=='+') // relative to current event
 			s = '@' ~ s;
 
-		int padd = find(s, '-');
-		int psub = find(s, '+');
+		int padd = countUntil(s, '-');
+		int psub = countUntil(s, '+');
 		if (psub>0 || padd>0) // support simple arithmetics
 			if (psub<=0 || padd>psub)
 				return parsePositionSubexpression(s[0..padd-1]) + parsePositionSubexpression(s[padd+1..$]);
@@ -168,7 +177,7 @@ int main(string[] argv)
 		else
 			return map.lookup(addr);
 	}
-	
+
 	void showEvent(int i)
 	{
 		auto event = log.events[i];
@@ -178,7 +187,7 @@ int main(string[] argv)
 			writef(" %08X -> %08X - %08X (%d bytes)", oldp, p, p+size, size);
 			if (className)
 				writef(" %s", className);
-			writefln;
+			writeln;
 		}
 		else
 		if (cast(MemoryAllocationEvent)event) with (cast(MemoryAllocationEvent)event)
@@ -186,7 +195,7 @@ int main(string[] argv)
 			writef(" %08X - %08X (%d bytes)", p, p+size, size);
 			if (className)
 				writef(" %s", className);
-			writefln;
+			writeln;
 		}
 		else
 		if (cast(FreeEvent)event) with (cast(FreeEvent)event)
@@ -198,7 +207,7 @@ int main(string[] argv)
 		if (cast(TextEvent)event) with (cast(TextEvent)event)
 			writefln(" %s", strip(text));
 		else
-			writefln();
+			writeln();
 	}
 
 	void showInfo(MemoryStateEvent event, uint p, Pool* pool=null, int rootIndex = -1, uint value=0)
@@ -285,7 +294,7 @@ int main(string[] argv)
 		}
 		else
 			writef(" - outside heap/stack");
-		writefln();
+		writeln();
 	}
 
 	void dump(ubyte[] data, uint startAddr)
@@ -299,7 +308,7 @@ int main(string[] argv)
 				writef(" ");
 			writef("%02X ", v);
 			if (i%16==15 || i==data.length-1)
-			{	
+			{
 				for (int l=i%16+1;l<16;l++)
 				{
 					if (l%8==0)
@@ -313,8 +322,8 @@ int main(string[] argv)
 					else if (vv<32 || vv>=127)
 						writef(".");
 					else
-						writef(cast(char)vv);
-				writefln;
+						write(cast(char)vv);
+				writeln;
 			}
 		}
 	}
@@ -331,9 +340,9 @@ int main(string[] argv)
 		if (args.length==0) continue;
 
 		bool allRefs;
-		
+
 		try
-			switch (tolower(args[0]))
+			switch (toLower(args[0]))
 			{
 				// === General statistics ===
 				case "stats": // display event counts
@@ -352,18 +361,18 @@ int main(string[] argv)
 					foreach (event;log.events)
 					{
 						auto allocEvent = cast(LogReader.MemoryAllocationEvent)event;
-						if (allocEvent is null) 
+						if (allocEvent is null)
 							continue;
 						if (allocEvent.stackTrace in stacks)
-							stacks[allocEvent.stackTrace] += allocEvent.size;
+							stacks[allocEvent.stackTrace.idup] += allocEvent.size;
 						else
-							stacks[allocEvent.stackTrace] = allocEvent.size;
+							stacks[allocEvent.stackTrace.idup] = allocEvent.size;
 					}
 					struct Sorter
 					{
 						uint[] stack;
-					
-						int opCmp(Sorter* s) 
+
+						int opCmp(Sorter* s)
 						{
 							ulong my = stacks[stack];
 							ulong that = stacks[s.stack];
@@ -375,7 +384,7 @@ int main(string[] argv)
 					int n = 5;
 					if (args.length>1)
 						n = toInt(args[1]);
-					if (n>sortedStacks.length) 
+					if (n>sortedStacks.length)
 						n = sortedStacks.length;
 					writefln("Top %d allocators by total allocated data:", n);
 					foreach (sorter;sortedStacks[0..n])
@@ -415,7 +424,7 @@ int main(string[] argv)
 						if (event.type == PACKET_TEXT)
 						{
 							auto textEvent = cast(TextEvent)event;
-							if (s.length && textEvent.text.find(s)<0)
+							if (s.length && textEvent.text.countUntil(s)<0)
 								continue;
 							showEvent(i);
 						}
@@ -579,11 +588,11 @@ Lbreak:
 								if (pageNr%16==0)
 									if (pageNr/16%columns==0)
 									{
-										writefln;
+										writeln;
 										writef("%08X: ", addr);
 									}
 									else
-										writef(' ');
+										write(' ');
 								bool hasScan, hasNoScan;
 								// does this page have pointers?
 								if (bin<=B_PAGEPLUS)
@@ -615,11 +624,11 @@ Lbreak:
 								else
 								if (!hasScan && hasNoScan)
 									lowVideo();
-								writef(pageChars[bin]);
+								write(pageChars[bin]);
 								if (hasScan != hasNoScan)
 									normVideo();
 							}
-							writefln();
+							writeln();
 							found = true;
 						}
 					if (!found)
@@ -666,27 +675,27 @@ Lbreak:
 						if (i%16==0)
 							if (i/16%columns==0)
 							{
-								writefln;
+								writeln;
 								writef("%08X: ", addr);
 							}
 							else
-								writef(' ');
+								write(' ');
 						bool free   = Pool.readBit(pool.freebits, biti);
 						bool noscan = Pool.readBit(pool.noscan  , biti);
 						bool finals = Pool.readBit(pool.finals  , biti);
 						if (free)
-							writef('.');
+							write('.');
 						else
 						{
 							if (noscan)
 								lowVideo();
 							else
 								highVideo();
-							writef(finals ? 'C' : 'D');
+							write(finals ? 'C' : 'D');
 							normVideo();
 						}
 					}
-					writefln();
+					writeln();
 					break;
 				}
 				case "stackinfo":
@@ -905,7 +914,7 @@ Lbreak:
 					if (args.length!=2)
 						throw new Exception("Specify a search pattern");
 					foreach (ref symbol; map.symbols)
-						if (symbol.name.find(args[1])>=0)
+						if (symbol.name.countUntil(args[1])>=0)
 							writefln("%08X - %s", symbol.address, symbol.prettyName());
 					break;
 				}
@@ -1061,18 +1070,18 @@ string timeStr(time_t time)
 {
 	char[12] s;
 	strftime(s.ptr, s.length, "%H:%M:%S", localtime(&time));
-	return toString(s.dup.ptr);
+	return to!string(s.dup.ptr);
 }
 
 string findMostRecent(string pattern)
 {
 	d_time newestTime;
 	string newestFile;
-	foreach (file;listdir("."))
-		if (fnmatch(file, pattern))
+	foreach (string file;dirEntries(".", SpanMode.shallow))
+		if (globMatch(file, pattern))
 		{
-			d_time c, a, m;
-			getTimes(file, c, a, m);
+			d_time a, m;
+			getTimes(file, a, m);
 			if (m > newestTime)
 			{
 				newestTime = m;
@@ -1090,21 +1099,21 @@ version(Windows) // use Windows API to set the colour
 	/// Emphasized text
 	void highVideo()
 	{
-		fflush(stdout);
+		fflush(stdout.getFP());
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 15);
 	}
 
 	/// Darker text
 	void lowVideo()
 	{
-		fflush(stdout);
+		fflush(stdout.getFP());
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 8);
 	}
 
 	/// Normal text
 	void normVideo()
 	{
-		fflush(stdout);
+		fflush(stdout.getFP());
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 7);
 	}
 
@@ -1121,7 +1130,7 @@ else
 version(linux) // use ANSI escape codes
 {
 	import std.c.stdlib;
-	
+
 	/// Emphasized text
 	void highVideo()
 	{
